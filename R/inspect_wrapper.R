@@ -33,14 +33,14 @@ inspect_wrapper <- function(wrapper, plot = TRUE, file = NULL,
   form <- formals(wrapper)
   
   td <- tryCatch(env$technical_data, error = function(e) NULL)
-  is_ml <- is.list(td) && all(c("stages", "calib") %in% names(td)) &&
+  is_ms <- is.list(td) && all(c("stages", "calib") %in% names(td)) &&
     is.list(td$stages) && length(td$stages) >= 1
-  if (is_ml){
+  if (is_ms){
     warning(
       "This wrapper does look like a qvar_ml() wrapper: technical_data 
       contain a 'stages' list and a 'calib' element."
     )
-    return(inspect_wrapper_ml(wrapper, plot = plot, file = file, title = title))
+    return(inspect_wrapper_ms(wrapper, plot = plot, file = file, title = title))
   } 
   
   # "Use inspect_wrapper_ml() for multi-levels qvar_ml() wrappers."

@@ -43,11 +43,10 @@
 #'   elements meaning no stratification at the corresponding stage). From
 #'   stage 2 onwards, the effective strata are the crossing of the parent
 #'   unit and of the declared strata variable.
-#' @param nrc_weight,response_dummy,nrc_dummy Lists of length
+#' @param response_prob,response_dummy,nrc_dummy Lists of length
 #'   \code{sampling_stages} (\code{NULL} elements meaning no non-response
 #'   correction at the corresponding stage). A single variable name is
-#'   assumed to refer to the LAST stage. \code{nrc_weight} is the
-#'   CONDITIONAL weight after non-response correction at the stage.
+#'   assumed to refer to the LAST stage.
 #' @param calibration_stage A numeric vector of length 1, the stage at
 #'   which calibration was performed (\code{sampling_stages} by default).
 #' @param calibration_weight A character vector of length 1, the name, in
@@ -80,8 +79,8 @@
 #'   \item Each \code{data.frame} from stage 2 onwards contains a linking
 #'   variable towards the stage above (\code{parent_id} argument; by
 #'   default, the \code{id} variable of stage \code{k - 1}).
-#'   \item \code{sampling_weight} and \code{nrc_weight} are CONDITIONAL
-#'   weights at the considered stage, that is the inverse of the inclusion
+#'   \item \code{sampling_weight} is CONDITIONAL
+#'   weight at the considered stage, that is the inverse of the inclusion
 #'   (resp. response) probability given the stages above (Poulpe
 #'   convention).
 #'   \item \code{calibration_weight} is the CUMULATED weight at the
@@ -131,7 +130,7 @@
 #'   strata = list("region", NULL),
 #'
 #'   # Non-response correction (last stage by default)
-#'   nrc_weight = "w_nrc",
+#'   response_prob = "prep",
 #'   response_dummy = "resp",
 #'
 #'   # Calibration (last stage by default, cumulated weight)
@@ -152,7 +151,7 @@ qvar_ms <- function(data, ..., by = NULL, where = NULL,
                     dissemination_dummy, dissemination_weight,
                     sampling_weight, strata = NULL,
                     scope_dummy = NULL,
-                    nrc_weight = NULL, response_dummy = NULL, nrc_dummy = NULL,
+                    response_prob = NULL, response_dummy = NULL, nrc_dummy = NULL,
                     calibration_stage = NULL,
                     calibration_weight = NULL, calibration_dummy = NULL, calibration_var = NULL,
                     define = FALSE, envir = parent.frame()
@@ -195,7 +194,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
                                             dissemination_dummy, dissemination_weight,
                                             sampling_weight, strata = NULL,
                                             scope_dummy = NULL,
-                                            nrc_weight = NULL, response_dummy = NULL, nrc_dummy = NULL,
+                                            response_prob = NULL, response_dummy = NULL, nrc_dummy = NULL,
                                             calibration_stage = NULL,
                                             calibration_weight = NULL, calibration_var = NULL, calibration_dummy = NULL,
                                             envir = parent.frame()
@@ -266,7 +265,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
   id <- as_stage_list(id, "id")
   sampling_weight <- as_stage_list(sampling_weight, "sampling_weight")
   strata <- as_stage_list(strata, "strata")
-  nrc_weight <- as_stage_list(nrc_weight, "nrc_weight", default_last = TRUE)
+  response_prob <- as_stage_list(response_prob, "response_prob", default_last = TRUE)
   response_dummy <- as_stage_list(response_dummy, "response_dummy", default_last = TRUE)
   nrc_dummy <- as_stage_list(nrc_dummy, "nrc_dummy", default_last = TRUE)
   
@@ -297,22 +296,22 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
   
   # Step 1.3: Arguments consistency (inconsistent arguments)
   inconsistency <- list(
-    nrc_weight_but_no_response_dummy = sapply(seq_len(sampling_stages), function(k)
-      !is.null(nrc_weight[[k]]) && is.null(response_dummy[[k]])),
-    resp_or_nrc_dummy_but_no_nrc_weight = sapply(seq_len(sampling_stages), function(k)
-      is.null(nrc_weight[[k]]) && (!is.null(response_dummy[[k]]) || !is.null(nrc_dummy[[k]]))),
+    response_prob_but_no_response_dummy = sapply(seq_len(sampling_stages), function(k)
+      !is.null(response_prob[[k]]) && is.null(response_dummy[[k]])),
+    resp_or_nrc_dummy_but_no_response_prob = sapply(seq_len(sampling_stages), function(k)
+      is.null(response_prob[[k]]) && (!is.null(response_dummy[[k]]) || !is.null(nrc_dummy[[k]]))),
     calibration_weight_but_no_calibration_var = !is.null(calibration_weight) && is.null(calibration_var),
     calibration_or_calibration_var_but_no_calibration_weight = is.null(calibration_weight) && (!is.null(calibration_dummy) || !is.null(calibration_var))
   )
   if(any(unlist(inconsistency))) stop(
     "Some arguments are inconsistent:",
-    if(any(inconsistency$nrc_weight_but_no_response_dummy)) paste0(
-      "\n  - at stage(s) ", paste(which(inconsistency$nrc_weight_but_no_response_dummy), collapse = ", "),
-      ": weights after non-response correction are provided (nrc_weight argument) but no variable indicating responding units (response_dummy argument)"
+    if(any(inconsistency$response_prob_but_no_response_dummy)) paste0(
+      "\n  - at stage(s) ", paste(which(inconsistency$response_prob_but_no_response_dummy), collapse = ", "),
+      ": Probabilities of response are provided (response_prob argument) but no variable indicating responding units (response_dummy argument)"
     ) else "",
-    if(any(inconsistency$resp_or_nrc_dummy_but_no_nrc_weight)) paste0(
-      "\n  - at stage(s) ", paste(which(inconsistency$resp_or_nrc_dummy_but_no_nrc_weight), collapse = ", "),
-      ": a variable indicating responding units and/or a variable indicating the units taking part in the non-response correction process are provided (response_dummy and nrc_dummy argument) but no weights after non-response correction (nrc_weight argument)."
+    if(any(inconsistency$resp_or_nrc_dummy_but_no_response_prob)) paste0(
+      "\n  - at stage(s) ", paste(which(inconsistency$resp_or_nrc_dummy_but_no_response_prob), collapse = ", "),
+      ": a variable indicating responding units and/or a variable indicating the units taking part in the non-response correction process are provided (response_dummy and nrc_dummy argument) but no probabilities of response (response_prob argument)."
     ) else "",
     if(inconsistency$calibration_weight_but_no_calibration_var)
       "\n  - calibrated weights are provided (calibration_weight argument) but no calibration variables (calibration_var argument)" else "",
@@ -330,7 +329,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
       if(!is.null(strata[[k]])) "stratified simple random sampling" else
         "simple random sampling WITHOUT stratification",
       if(k > 1) " (within the units of the stage above)" else "",
-      if(!is.null(nrc_weight[[k]])) ", with non-response correction through reweighting" else ""
+      if(!is.null(response_prob[[k]])) ", with non-response correction through reweighting" else ""
     )), collapse = ""),
     if(!is.null(scope_dummy)) "\n  - out-of-scope units (last stage)" else "",
     if(!is.null(calibration_weight)) paste0(
@@ -350,7 +349,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     id = id, parent_id = parent_id,
     dissemination_dummy = dissemination_dummy, dissemination_weight = dissemination_weight,
     sampling_weight = sampling_weight, strata = strata, scope_dummy = scope_dummy,
-    nrc_weight = nrc_weight, response_dummy = response_dummy, nrc_dummy = nrc_dummy,
+    response_prob = response_prob, response_dummy = response_dummy, nrc_dummy = nrc_dummy,
     calibration_weight = calibration_weight, calibration_dummy = calibration_dummy,
     calibration_var = calibration_var
   )
@@ -358,7 +357,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
   # Step 2.2: Expected length
   should_be_single_variable_name_by_stage <- c(
     "id", "parent_id", "sampling_weight", "strata",
-    "nrc_weight", "response_dummy", "nrc_dummy"
+    "response_prob", "response_dummy", "nrc_dummy"
   )
   should_be_single_variable_name <- intersect(c(
     "dissemination_dummy", "dissemination_weight", "scope_dummy",
@@ -440,7 +439,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
       parent = if(k > 1) stats::setNames(as.character(d[[arg$parent_id[[k]]]]), id_k) else NULL,
       sampling_weight = get_var("sampling_weight"),
       strata = get_var("strata"),
-      nrc_weight = get_var("nrc_weight"),
+      response_prob = get_var("response_prob"),
       response_dummy = get_var("response_dummy"),
       nrc_dummy = get_var("nrc_dummy")
     )
@@ -485,7 +484,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
         " do not exist in the stage ", k - 1, " file: ",
         display_only_n_first(parent_not_found), "."
       )
-      if(!is.null(arg$nrc_weight[[k - 1]])){
+      if(!is.null(arg$response_prob[[k - 1]])){
         parent_nonresponding <- unique(lv$parent[!(lev[[k - 1]]$response_dummy[lv$parent] %in% TRUE)])
         if(length(parent_nonresponding) > 0) stop(
           "The following units of stage ", k - 1, " are non-responding (", arg$response_dummy[[k - 1]],
@@ -552,12 +551,12 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
         stop("The non-reponse correction dummy variable (", arg$nrc_dummy[[k]], ")", lab, " should not contain any missing (NA) values.")
     }
     
-    # nrc_weight
-    if(!is.null(lv$nrc_weight)){
-      if(!is.numeric(lv$nrc_weight))
-        stop("The weights after non-response correction (", arg$nrc_weight[[k]], ")", lab, " should be numeric.")
-      if(anyNA(lv$nrc_weight[lv$response_dummy %in% TRUE & lv$nrc_dummy %in% TRUE])) stop(
-        "The weights after non-response correction (", arg$nrc_weight[[k]], ")", lab, " should not contain any missing (NA) values ",
+    # response_prob
+    if(!is.null(lv$response_prob)){
+      if(!is.numeric(lv$response_prob))
+        stop("The probabilities of response (", arg$response_prob[[k]], ")", lab, " should be numeric.")
+      if(anyNA(lv$response_prob[lv$response_dummy %in% TRUE & lv$nrc_dummy %in% TRUE])) stop(
+        "The probabilities of response (", arg$response_prob[[k]], ")", lab, " should not contain any missing (NA) values ",
         "for responding units (", arg$response_dummy[[k]], ") having taken part in the non-reponse correction process (", arg$nrc_dummy[[k]], ")."
       )
     }
@@ -620,7 +619,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
         display_only_n_first(calibration_var_pb_type), "."
       )
       if(length(calibration_var_quali) > 0) note(
-        "Note: The following calibration variables are qualitative (factor, character): ",
+        "The following calibration variables are qualitative (factor, character): ",
         display_only_n_first(calibration_var_quali), ". They will be automatically discretized."
       )
       calibration_var_pb_NA <- names(which(sapply(lv$calibration_var, function(var) anyNA(var[lv$calibration_dummy %in% TRUE]))))
@@ -704,9 +703,11 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     }
     
     corrected_weight <- lv$sampling_weight
-    if(!is.null(lv$nrc_weight))
+
+    if(!is.null(lv$response_prob))
       corrected_weight[lv$response_dummy & lv$nrc_dummy] <-
-      lv$nrc_weight[lv$response_dummy & lv$nrc_dummy]
+      lv$sampling_weight[lv$response_dummy & lv$nrc_dummy]/
+      lv$response_prob[lv$response_dummy & lv$nrc_dummy]
     
     upper_weight <- if(k == 1) stats::setNames(rep(1, length(lv$id)), lv$id) else
       stats::setNames(cumulated_weight[lv$parent], lv$id)
@@ -746,12 +747,11 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     )))
     samp <- samp[c("id", "exclude", "precalc")]
     
-    # Non-reponse
-    if(!is.null(lv$nrc_weight)){
+    if(!is.null(lv$response_prob)){
       nrc <- list()
       nrc$id <- lv$id[lv$response_dummy]
       nrc$sampling_weight <- lv$sampling_weight[nrc$id]
-      nrc$response_prob <- (lv$sampling_weight / lv$nrc_weight)[nrc$id]
+      nrc$response_prob <- lv$response_prob[nrc$id]
     }else nrc <- NULL
     
     # Calibration
@@ -929,7 +929,7 @@ qvar_ms_variance_function <- function(y, stages, calib){
     
   }
   
-  print(var)
+  print(as.data.frame(var))
   
   # Final summation
   Reduce(`+`, var)
