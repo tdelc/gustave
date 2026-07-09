@@ -19,7 +19,7 @@ qvar_ms(
   sampling_weight,
   strata = NULL,
   scope_dummy = NULL,
-  nrc_weight = NULL,
+  response_prob = NULL,
   response_dummy = NULL,
   nrc_dummy = NULL,
   calibration_stage = NULL,
@@ -68,11 +68,10 @@ elements meaning no stratification at the corresponding stage). From
 stage 2 onwards, the effective strata are the crossing of the parent
 unit and of the declared strata variable.}
 
-\item{nrc_weight, response_dummy, nrc_dummy}{Lists of length
+\item{response_prob, response_dummy, nrc_dummy}{Lists of length
 \code{sampling_stages} (\code{NULL} elements meaning no non-response
 correction at the corresponding stage). A single variable name is
-assumed to refer to the LAST stage. \code{nrc_weight} is the
-CONDITIONAL weight after non-response correction at the stage.}
+assumed to refer to the LAST stage.}
 
 \item{calibration_stage}{A numeric vector of length 1, the stage at
 which calibration was performed (\code{sampling_stages} by default).}
@@ -119,8 +118,8 @@ applied to the survey dataset of the last stage (see
   \item Each \code{data.frame} from stage 2 onwards contains a linking
   variable towards the stage above (\code{parent_id} argument; by
   default, the \code{id} variable of stage \code{k - 1}).
-  \item \code{sampling_weight} and \code{nrc_weight} are CONDITIONAL
-  weights at the considered stage, that is the inverse of the inclusion
+  \item \code{sampling_weight} is CONDITIONAL
+  weight at the considered stage, that is the inverse of the inclusion
   (resp. response) probability given the stages above (Poulpe
   convention).
   \item \code{calibration_weight} is the CUMULATED weight at the
@@ -171,7 +170,7 @@ precision_survey <- qvar_ms(
   strata = list("region", NULL),
 
   # Non-response correction (last stage by default)
-  nrc_weight = "w_nrc",
+  response_prob = "prep",
   response_dummy = "resp",
 
   # Calibration (last stage by default, cumulated weight)

@@ -161,10 +161,24 @@ qvar_ms <- function(data, ..., by = NULL, where = NULL,
   # Step 1: Define the variance wrapper
   call <- as.list(match.call())[-1]
   call$envir <- envir
-  qvar_variance_wrapper <- do.call(
-    define_qvar_ms_variance_wrapper,
-    call[names(call) %in% names(formals(define_qvar_ms_variance_wrapper))]
+  definition_log <- character(0)
+  
+  qvar_variance_wrapper <- withCallingHandlers(
+    do.call(
+      define_qvar_ms_variance_wrapper,
+      call[names(call) %in% names(formals(define_qvar_ms_variance_wrapper))]
+    ),
+    message = function(m) definition_log <<- c(
+      definition_log, sub("\\n+$", "", conditionMessage(m))
+    ),
+    warning = function(w) definition_log <<- c(
+      definition_log, paste0("Warning: ", sub("\\n+$", "", conditionMessage(w)))
+    )
   )
+  
+  attr(qvar_variance_wrapper, "definition_log") <- definition_log
+  attr(qvar_variance_wrapper, "definition_call") <- match.call()
+  class(qvar_variance_wrapper) <- c("qvar_ml_wrapper", class(qvar_variance_wrapper))
   
   # Step 2: Export the variance wrapper
   if(define){
@@ -934,4 +948,57 @@ qvar_ms_variance_function <- function(y, stages, calib){
   # Final summation
   Reduce(`+`, var)
   
+}
+
+#' Display the notes emitted when a variance wrapper was defined
+#'
+#' @description \code{qvar_notes} re-displays the messages, notes and
+#'   warnings that were emitted when a variance wrapper was defined by
+#'   \code{\link{qvar_ml}} (survey features taken into account, automatic
+#'   coercions, excluded strata, weight consistency checks, and so on),
+#'   together with the definition call. These are stored as attributes of
+#'   the wrapper at definition time.
+#'
+#' @param wrapper A variance estimation wrapper defined by
+#'   \code{\link{qvar_ml}}.
+#'
+#' @return The definition log, as a character vector (invisibly).
+#'
+#' @examples \dontrun{
+#' precision <- qvar_ml(..., define = TRUE)
+#' qvar_notes(precision)
+#' }
+#'
+#' @export
+
+qvar_notes <- function(wrapper){
+  log <- attr(wrapper, "definition_log")
+  if(is.null(log)){
+    message(
+      "No definition log is stored in this wrapper ",
+      "(only wrappers defined by qvar_ml() carry one)."
+    )
+    return(invisible(NULL))
+  }
+  def_call <- attr(wrapper, "definition_call")
+  if(!is.null(def_call)){
+    cat("Wrapper defined by:\n\n")
+    print(def_call)
+    cat("\n")
+  }
+  cat(log, sep = "\n")
+  invisible(log)
+}
+
+
+#' @export
+print.qvar_ml_wrapper <- function(x, ...){
+  cat("Variance estimation wrapper defined by qvar_ml()\n")
+  cat("================================================\n\n")
+  qvar_notes(x)
+  cat(
+    "\nUse inspect_wrapper_ml() for a full report, ",
+    "and body()/unclass() to display the underlying function.\n", sep = ""
+  )
+  invisible(x)
 }

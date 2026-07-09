@@ -23,7 +23,7 @@
 #'
 #' @keywords internal
 
-inspect_wrapper_ml <- function(wrapper, plot = TRUE, file = NULL,
+inspect_wrapper_ms <- function(wrapper, plot = TRUE, file = NULL,
                                title = "\U0001F50D Multistage Variance Wrapper Inspection") {
   
   # ══════════════════════════════════════════════════════════════
@@ -36,30 +36,33 @@ inspect_wrapper_ml <- function(wrapper, plot = TRUE, file = NULL,
   form <- formals(wrapper)
   
   td <- tryCatch(env$technical_data, error = function(e) NULL)
-  is_ml <- is.list(td) && all(c("stages", "calib") %in% names(td)) &&
+  is_ms <- is.list(td) && all(c("stages", "calib") %in% names(td)) &&
     is.list(td$stages) && length(td$stages) >= 1
-  if (!is_ml) stop(
-    "This wrapper does not look like a qvar_ml() wrapper: technical_data ",
+  if (!is_ms) stop(
+    "This wrapper does not look like a qvar_ms() wrapper: technical_data ",
     "should contain a 'stages' list and a 'calib' element. ",
     "Use inspect_wrapper() for single-stage qvar() wrappers."
   )
   
+  definition_log <- attr(wrapper, "definition_log")
+  definition_call <- attr(wrapper, "definition_call")
   ref_info <- extract_reference_info(env, form)
-  ml       <- extract_ml_structure(td)
-  pipeline <- build_ml_pipeline(ml)
+  ms       <- extract_ms_structure(td)
+  pipeline <- build_ms_pipeline(ms)
   
   # ══════════════════════════════════════════════════════════════
   # Part 2: Print console summary
   # ══════════════════════════════════════════════════════════════
-  
-  print_ml_summary(ref_info, ml, pipeline)
+
+  print_ms_summary(ref_info, ms, pipeline)
   
   # ══════════════════════════════════════════════════════════════
   # Part 3: Build and display the HTML report
   # ══════════════════════════════════════════════════════════════
   
   if (plot) {
-    html <- build_ml_html(title, ref_info, ml, pipeline)
+    html <- build_ms_html(title, definition_log, definition_call, 
+                          ref_info, ms, pipeline)
     if (is.null(file)) file <- tempfile(fileext = ".html")
     writeLines(html, file)
     message("Report written to: ", file)
@@ -68,8 +71,8 @@ inspect_wrapper_ml <- function(wrapper, plot = TRUE, file = NULL,
   
   invisible(list(
     reference   = ref_info,
-    stages      = ml$stages,
-    calibration = ml$calib,
+    stages      = ms$stages,
+    calibration = ms$calib,
     pipeline    = pipeline
   ))
 }
@@ -79,7 +82,7 @@ inspect_wrapper_ml <- function(wrapper, plot = TRUE, file = NULL,
 # Internal: extract the per-stage structure from technical_data
 # ══════════════════════════════════════════════════════════════════
 
-extract_ml_structure <- function(td) {
+extract_ms_structure <- function(td) {
   
   stages <- td$stages
   calib  <- td$calib
@@ -142,11 +145,11 @@ extract_ml_structure <- function(td) {
 # ══════════════════════════════════════════════════════════════════
 # Internal: build the pipeline from the structure (NOT from the AST)
 # ══════════════════════════════════════════════════════════════════
-# Reproduit l'ordre exact de qvar_ml_variance_function() : boucle
+# Reproduit l'ordre exact de qvar_ms_variance_function() : boucle
 # remontante du degre L au degre 1, avec pour chaque degre
 # add_zero -> [res_cal] -> [var_pois + reponderation] -> var_srs -> [sum_by]
 
-build_ml_pipeline <- function(ml) {
+build_ms_pipeline <- function(ms) {
   
   steps <- list()
   i <- 0
@@ -154,13 +157,13 @@ build_ml_pipeline <- function(ml) {
     i <<- i + 1
     steps[[i]] <<- c(list(step = i), list(...))
   }
-  suffix <- function(k) if (ml$L > 1) paste0("_stage", k) else ""
+  suffix <- function(k) if (ms$L > 1) paste0("_stage", k) else ""
   
   variance_names <- character(0)
   
-  for (k in rev(seq_len(ml$L))) {
+  for (k in rev(seq_len(ms$L))) {
     
-    li <- ml$stages[[k]]
+    li <- ms$stages[[k]]
     
     add_step(
       stage = k, function_name = "add_zero", category = "transition",
@@ -174,8 +177,8 @@ build_ml_pipeline <- function(ml) {
       label = "Calibration residuals",
       formula = "y_i - x_i' \\hat{B}",
       detail = paste0(
-        ml$calib$n_units, " calibrated units",
-        if (!is.na(ml$calib$n_var)) paste0(", ", ml$calib$n_var, " calibration variables (discretized)") else ""
+        ms$calib$n_units, " calibrated units",
+        if (!is.na(ms$calib$n_var)) paste0(", ", ms$calib$n_var, " calibration variables (discretized)") else ""
       )
     )
     
@@ -269,11 +272,11 @@ describe_tree <- function(obj, name, depth = 0, max_depth = 4) {
 # Internal: console summary
 # ══════════════════════════════════════════════════════════════════
 
-print_ml_summary <- function(ref_info, ml, pipeline) {
+print_ms_summary <- function(ref_info, ms, pipeline) {
   
   cat("\n")
   cat("============================================================\n")
-  cat("  MULTISTAGE VARIANCE WRAPPER INSPECTION (qvar_ml)\n")
+  cat("  MULTISTAGE VARIANCE WRAPPER INSPECTION (qvar_ms)\n")
   cat("============================================================\n\n")
   
   cat("-- Reference population --\n")
@@ -285,9 +288,9 @@ print_ml_summary <- function(ref_info, ml, pipeline) {
       format(ref_info$weight_range[2], digits = 4), "]\n", sep = "")
   cat("  Zero-weight:    ", ref_info$n_zero_weight, " units\n\n")
   
-  cat("-- Sampling design: ", ml$L, " stage(s) --\n\n", sep = "")
+  cat("-- Sampling design: ", ms$L, " stage(s) --\n\n", sep = "")
   
-  for (li in ml$stages) {
+  for (li in ms$stages) {
     cat("  Stage ", li$stage,
         if (li$stage == 1) " (primary units)" else if (li$is_last) " (final units)" else "",
         "\n", sep = "")
@@ -310,8 +313,8 @@ print_ml_summary <- function(ref_info, ml, pipeline) {
       cat("    Non-response corr.:     no\n")
     }
     if (li$has_calib) {
-      cat("    Calibration:            YES - ", ml$calib$n_units, " units",
-          if (!is.na(ml$calib$n_var)) paste0(", ", ml$calib$n_var, " variables") else "",
+      cat("    Calibration:            YES - ", ms$calib$n_units, " units",
+          if (!is.na(ms$calib$n_var)) paste0(", ", ms$calib$n_var, " variables") else "",
           "\n", sep = "")
     } else {
       cat("    Calibration:            no\n")
@@ -347,7 +350,7 @@ print_ml_summary <- function(ref_info, ml, pipeline) {
 # Internal: Mermaid diagram with one subgraph per stage
 # ══════════════════════════════════════════════════════════════════
 
-build_ml_mermaid <- function(pipeline, ml) {
+build_ms_mermaid <- function(pipeline, ms) {
   
   node_shape <- function(step, sid) {
     fn_esc    <- mermaid_esc(step$function_name)
@@ -367,8 +370,8 @@ build_ml_mermaid <- function(pipeline, ml) {
              '  START(["<b>y</b><br/>Variable of interest<br/>(last stage, disseminated units)"])')
   
   stage_of  <- vapply(pipeline, function(s) ifelse(is.na(s$stage), -1L, as.integer(s$stage)), integer(1))
-  for (k in rev(seq_len(ml$L))) {
-    li <- ml$stages[[k]]
+  for (k in rev(seq_len(ms$L))) {
+    li <- ms$stages[[k]]
     sub_title <- paste0("Stage ", k,
                         if (k == 1) " \u2014 primary units" else if (li$is_last) " \u2014 final units" else "",
                         " \u00b7 ", li$n_units, " units")
@@ -417,7 +420,7 @@ build_ml_mermaid <- function(pipeline, ml) {
                     NULL)
     if (!is.null(style)) lines <- c(lines, paste0('  style ', sid, ' ', style))
   }
-  for (k in seq_len(ml$L)) {
+  for (k in seq_len(ms$L)) {
     lines <- c(lines, paste0('  style LVL', k,
                              ' fill:#f8f9fc,stroke:#c5cae9,stroke-width:1px'))
   }
@@ -510,9 +513,10 @@ build_tree_table <- function(raw_td) {
 }
 
 
-build_ml_html <- function(title, ref_info, ml, pipeline) {
+build_ms_html <- function(title, definition_log, definition_call, 
+                          ref_info, ms, pipeline) {
   
-  mermaid <- build_ml_mermaid(pipeline, ml)
+  mermaid <- build_ms_mermaid(pipeline, ms)
   
   # ── Reference card ──
   ref_html <- paste0(
@@ -520,7 +524,7 @@ build_ml_html <- function(title, ref_info, ml, pipeline) {
     '<h2>Reference Population</h2>',
     '<table class="info-table">',
     '<tr><td>Analysis id</td><td><code>', htmlesc(ref_info$default_id), '</code></td></tr>',
-    '<tr><td>Sampling stages</td><td>', ml$L, '</td></tr>',
+    '<tr><td>Sampling stages</td><td>', ms$L, '</td></tr>',
     '<tr><td>Number of units</td><td>', ref_info$n_units, '</td></tr>',
     '<tr><td>First 5 ids</td><td><code>',
     htmlesc(paste(ref_info$id_first_5, collapse = ", ")), '</code></td></tr>',
@@ -532,9 +536,11 @@ build_ml_html <- function(title, ref_info, ml, pipeline) {
     '</div>'
   )
   
+  notes_html <- build_notes_card(definition_log, definition_call)
+  
   # ── One card per stage (stage 1 first) ──
   stage_cards <- paste(
-    vapply(ml$stages, build_stage_card, character(1), calib_info = ml$calib),
+    vapply(ms$stages, build_stage_card, character(1), calib_info = ms$calib),
     collapse = "\n"
   )
   
@@ -577,7 +583,7 @@ build_ml_html <- function(title, ref_info, ml, pipeline) {
     '</div>'
   )
   
-  tree_html <- build_tree_table(ml$raw)
+  tree_html <- build_tree_table(ms$raw)
   
   # ── Assemble full HTML ──
   paste0(
@@ -644,6 +650,20 @@ build_ml_html <- function(title, ref_info, ml, pipeline) {
   .badge-sum  { background: #eceff1; color: #37474f; }
   .badge-off  { background: #f5f5f5; color: #9e9e9e; }
   .badge-other { background: #f5f5f5; color: #616161; }
+  .log-item {
+  display: flex; align-items: flex-start; gap: 0.6rem;
+  padding: 0.55rem 0.7rem; margin-bottom: 0.5rem;
+  border-radius: 6px; border-left: 3px solid;
+  font-size: 0.85rem;
+  }
+  .log-item .badge { flex-shrink: 0; margin-top: 0.1rem; }
+  .log-text { white-space: pre-wrap; min-width: 0; }
+  .log-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem; }
+  .log-info    { background: #f8f9fb; border-left-color: #607d8b; }
+  .log-note    { background: #f4f9fe; border-left-color: #2196f3; }
+  .log-warning { background: #fff8f0; border-left-color: #ff9800; }
+  .log-call    { background: #f8f9fb; border-left-color: #9e9e9e; }
   .stage-badge {
     display: inline-block; padding: 0.1rem 0.55rem; border-radius: 4px;
     font-size: 0.78rem; font-weight: 700;
@@ -664,8 +684,12 @@ build_ml_html <- function(title, ref_info, ml, pipeline) {
     ', ref_html, '
   </div>
   <div class="right-panel">
-    ', stage_cards, '
+  ', build_notes_card(definition_log, definition_call), '
   </div>
+</div>
+<br/>
+<div class="right-panel">
+    ', stage_cards, '
 </div>
 <br/>
 <div class="layout-full">
@@ -682,5 +706,47 @@ build_ml_html <- function(title, ref_info, ml, pipeline) {
 <script>mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { useMaxWidth: true, htmlLabels: true } });</script>
 </body>
 </html>'
+  )
+}
+
+# ══════════════════════════════════════════════════════════════════
+# Internal: definition log card (notes/warnings emitted by qvar_ms)
+# ══════════════════════════════════════════════════════════════════
+
+build_notes_card <- function(definition_log, definition_call = NULL) {
+  
+  if (is.null(definition_log) || length(definition_log) == 0) return("")
+  
+  items <- vapply(definition_log, function(entry) {
+    type <- if (startsWith(entry, "Warning: ")) "warning"
+    else if (startsWith(entry, "Note: ")) "note"
+    else "info"
+    text  <- sub("^(Warning|Note): ", "", entry)
+    badge <- switch(type,
+                    "warning" = '<span class="badge badge-vnr">WARNING</span>',
+                    "note"    = '<span class="badge badge-vsmp">NOTE</span>',
+                    "info"    = '<span class="badge badge-sum">INFO</span>'
+    )
+    paste0(
+      '<div class="log-item log-', type, '">', badge,
+      '<div class="log-text">', htmlesc(text), '</div>',
+      '</div>'
+    )
+  }, character(1))
+  
+  call_html <- if (!is.null(definition_call)) paste0(
+    '<div class="log-item log-call">',
+    '<span class="badge badge-other">CALL</span>',
+    '<div class="log-text log-mono">',
+    htmlesc(paste(deparse(definition_call, width.cutoff = 80), collapse = "\n")),
+    '</div></div>'
+  ) else ""
+  
+  paste0(
+    '<div class="card">',
+    '<h2>Methodological notes</h2>',
+    call_html,
+    paste(items, collapse = "\n"),
+    '</div>'
   )
 }
