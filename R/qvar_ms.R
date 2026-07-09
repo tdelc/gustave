@@ -150,6 +150,7 @@ qvar_ms <- function(data, ..., by = NULL, where = NULL,
                     id, parent_id = NULL,
                     dissemination_dummy, dissemination_weight,
                     sampling_weight, strata = NULL,
+                    method_little_stratum = "exclude",
                     scope_dummy = NULL,
                     response_prob = NULL, response_dummy = NULL, nrc_dummy = NULL,
                     calibration_stage = NULL,
@@ -207,6 +208,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
                                             id, parent_id = NULL,
                                             dissemination_dummy, dissemination_weight,
                                             sampling_weight, strata = NULL,
+                                            method_little_stratum = "exclude",
                                             scope_dummy = NULL,
                                             response_prob = NULL, response_dummy = NULL, nrc_dummy = NULL,
                                             calibration_stage = NULL,
@@ -693,11 +695,20 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     strata_with_one_sampled_unit <-
       names(which(tapply(lv$id[!samp_exclude], strata_eff[!samp_exclude], length) == 1))
     if(length(strata_with_one_sampled_unit) > 0){
-      warn(
-        "The following strata", lab, " contain less than two sampled units: ",
-        display_only_n_first(strata_with_one_sampled_unit), ". ",
-        "They are excluded from the variance estimation process (but kept for point estimates)."
-      )
+      if (method_little_stratum == "exclude"){
+        warn(
+          "The following strata", lab, " contain less than two sampled units: ",
+          display_only_n_first(strata_with_one_sampled_unit), ". ",
+          "They are excluded from the variance estimation process (but kept for point estimates)."
+        )        
+      }else{
+        warn(
+          "The following strata", lab, " contain less than two sampled units: ",
+          display_only_n_first(strata_with_one_sampled_unit), ". ",
+          "They are treated with the poisson estimation process."
+        )
+      }
+
       samp_exclude <- samp_exclude | as.character(strata_eff) %in% strata_with_one_sampled_unit
     }
     
@@ -806,7 +817,8 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     reference_id = reference_id,
     reference_weight = reference_weight,
     default_id = arg$id[[sampling_stages]],
-    technical_data = list(stages = technical_stages, calib = calib)
+    technical_data = list(stages = technical_stages, calib = calib),
+    technical_param = list(method_little_stratum = method_little_stratum)
   )
   
   qvar_variance_wrapper
@@ -899,7 +911,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
 #'
 #' @keywords internal
 
-qvar_ms_variance_function <- function(y, stages, calib){
+qvar_ms_variance_function <- function(y, stages, calib, method_little_stratum){
   
   var <- list()
   
@@ -933,6 +945,27 @@ qvar_ms_variance_function <- function(y, stages, calib){
       precalc = lev_k$samp$precalc,
       w = w_rao
     )
+    
+    # if (method_little_stratum != "exclude"){
+    #   y_solo <- y[lev_k$samp$exclude & !lev_k$samp$precalc$exh, , drop = FALSE]
+    #   w_solo <- upper_weight[lev_k$samp$exclude & !lev_k$samp$precalc$exh]
+    #   var[[paste0("sampling_pois", if(length(stages) > 1) paste0("_stage", k) else "")]] <- var_pois(
+    #     y = y_solo,
+    #     pik =  1/w_solo
+    #   )
+    # }
+    
+    if (method_little_stratum != "exclude") {
+      agg_w <- lev_k$agg_weight[rownames(y)]
+      solo  <- lev_k$samp$exclude & abs(agg_w - 1) > 1e-12
+      if (any(solo)) {
+        var[[paste0("sampling_pois", if (length(stages) > 1) paste0("_stage", k) else "")]] <- var_pois(
+          y   = y[solo, , drop = FALSE],
+          pik = 1 / agg_w[solo],
+          w   = upper_weight[solo]
+        )
+      }
+    }
     
     if(k > 1){
       y <- sum_by(

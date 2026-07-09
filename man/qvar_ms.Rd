@@ -18,6 +18,7 @@ qvar_ms(
   dissemination_weight,
   sampling_weight,
   strata = NULL,
+  method_little_stratum = "exclude",
   scope_dummy = NULL,
   response_prob = NULL,
   response_dummy = NULL,

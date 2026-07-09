@@ -4,7 +4,7 @@
 \alias{qvar_ms_variance_function}
 \title{Variance function for multistage designs (internal, used by qvar_ms)}
 \usage{
-qvar_ms_variance_function(y, stages, calib)
+qvar_ms_variance_function(y, stages, calib, method_little_stratum)
 }
 \arguments{
 \item{y}{A (sparse) numerical matrix of the variable(s) whose variance of
