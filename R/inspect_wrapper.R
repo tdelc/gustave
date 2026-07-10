@@ -37,13 +37,11 @@ inspect_wrapper <- function(wrapper, plot = TRUE, file = NULL,
     is.list(td$stages) && length(td$stages) >= 1
   if (is_ms){
     warning(
-      "This wrapper does look like a qvar_ml() wrapper: technical_data 
+      "This wrapper does look like a qvar_ms() wrapper: technical_data 
       contain a 'stages' list and a 'calib' element."
     )
     return(inspect_wrapper_ms(wrapper, plot = plot, file = file, title = title))
   } 
-  
-  # "Use inspect_wrapper_ml() for multi-levels qvar_ml() wrappers."
   
   # Extract technical data and technical paramaters
   vf <- env$variance_function

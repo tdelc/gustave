@@ -50,11 +50,16 @@ inspect_wrapper_ms <- function(wrapper, plot = TRUE, file = NULL,
   ms       <- extract_ms_structure(td)
   pipeline <- build_ms_pipeline(ms)
   
+  # Technical parameters
+  vf_args <- names(formals(env$variance_function))
+  tp_names <- setdiff(vf_args, c("y","stages", "calib"))
+  tp_info  <- extract_technical_param_info(form,tp_names)
+  
   # ══════════════════════════════════════════════════════════════
   # Part 2: Print console summary
   # ══════════════════════════════════════════════════════════════
 
-  print_ms_summary(ref_info, ms, pipeline)
+  print_ms_summary(ref_info, ms, tp_info, pipeline)
   
   # ══════════════════════════════════════════════════════════════
   # Part 3: Build and display the HTML report
@@ -62,7 +67,7 @@ inspect_wrapper_ms <- function(wrapper, plot = TRUE, file = NULL,
   
   if (plot) {
     html <- build_ms_html(title, definition_log, definition_call, 
-                          ref_info, ms, pipeline)
+                          ref_info, tp_info, ms, pipeline)
     if (is.null(file)) file <- tempfile(fileext = ".html")
     writeLines(html, file)
     message("Report written to: ", file)
@@ -272,7 +277,7 @@ describe_tree <- function(obj, name, depth = 0, max_depth = 4) {
 # Internal: console summary
 # ══════════════════════════════════════════════════════════════════
 
-print_ms_summary <- function(ref_info, ms, pipeline) {
+print_ms_summary <- function(ref_info, ms, tp_info, pipeline) {
   
   cat("\n")
   cat("============================================================\n")
@@ -322,6 +327,32 @@ print_ms_summary <- function(ref_info, ms, pipeline) {
     if (!is.na(li$n_parents))
       cat("    Aggregates to:          ", li$n_parents, " parent units (stage ",
           li$stage - 1, ")\n", sep = "")
+    cat("\n")
+  }
+  
+  if (length(tp_info) > 0){
+    cat("-- Technical parameters --\n")
+    for (tp in tp_info) {
+      if (length(tp$type) == 0 || tp$type == "NULL") {
+        cat("  ", tp$name, ": NULL\n", sep = "")
+        next
+      }
+      if (tp$type == "list") {
+        cat("  ", tp$name, " [list, ", tp$n_elements, " elements]\n", sep = "")
+        for (el in tp$elements) {
+          cat("    - ", el$name, " <", el$type, "> ",
+              el$dimension, sep = "")
+          if (!is.null(el$first_values)) {
+            cat("  (", el$first_values, ")", sep = "")
+          }
+          cat("\n")
+        }
+      } else {
+        cat("  ", tp$name, " <", tp$type, "> ", sep = "")
+        if (!is.null(tp$dimension)) cat(tp$dimension)
+        cat("\n")
+      }
+    }
     cat("\n")
   }
   
@@ -514,7 +545,7 @@ build_tree_table <- function(raw_td) {
 
 
 build_ms_html <- function(title, definition_log, definition_call, 
-                          ref_info, ms, pipeline) {
+                          ref_info, tp_info, ms, pipeline) {
   
   mermaid <- build_ms_mermaid(pipeline, ms)
   
@@ -537,6 +568,12 @@ build_ms_html <- function(title, definition_log, definition_call,
   )
   
   notes_html <- build_notes_card(definition_log, definition_call)
+  
+  if (length(tp_info) > 0){
+    tp_html <- build_td_table(tp_info, "Technical Parameters")
+  }else{
+    tp_html <- ""
+  }
   
   # ── One card per stage (stage 1 first) ──
   stage_cards <- paste(
@@ -700,6 +737,7 @@ build_ms_html <- function(title, definition_log, definition_call,
       ', mermaid, '
     </div>
   </div>
+  ', tp_html, '
   ', tree_html, '
 </div>
 

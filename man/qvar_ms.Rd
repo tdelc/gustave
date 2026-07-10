@@ -18,7 +18,7 @@ qvar_ms(
   dissemination_weight,
   sampling_weight,
   strata = NULL,
-  method_little_stratum = "exclude",
+  single_unit_strata = c("exclude", "poisson"),
   scope_dummy = NULL,
   response_prob = NULL,
   response_dummy = NULL,
