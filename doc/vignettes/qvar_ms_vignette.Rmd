@@ -3,6 +3,12 @@ title: "Multistage variance estimation with qvar_ms"
 author: "Thomas Delclite"
 date: "`r Sys.Date()`"
 output:
+  rmarkdown::pdf_document:
+    fig_width: 8
+    fig_height: 6
+    toc: true
+    number_sections: true
+    latex_engine: xelatex
   rmarkdown::html_vignette:
     toc: true
     toc_depth: 2
@@ -43,23 +49,36 @@ This vignette walks through **nine cases of increasing complexity**, using
 the simulated Labour Force Survey (LFS) data shipped with the package
 (`lfs_samp_area`: areas, i.e. primary sampling units; `lfs_samp_dwel`:
 dwellings sampled within areas; `lfs_samp_ind`: individuals within
-dwellings). For each case, the `qvar_ms()` call is compared with a
-hand-built variance wrapper (`define_variance_wrapper()`) that makes every
-methodological step explicit: the hand-built version is the ground truth
-showing exactly what `qvar_ms()` does under the hood.
+dwellings).
 
 ```{r libraries, message = FALSE, warning = FALSE}
-library(devtools)
 library(gustave)
 library(dplyr)
 library(purrr)
 
 lfs_samp_area <- gustave::lfs_samp_area
 lfs_samp_dwel <- gustave::lfs_samp_dwel
-
-head(lfs_samp_area)
-head(lfs_samp_dwel)
+lfs_samp_ind  <- gustave::lfs_samp_ind
 ```
+
+# How to use `qvar_ms()`
+
+The best way to learn `qvar_ms()` is to build wrappers of increasing
+complexity. This section walks through nine cases, each introducing
+exactly one new feature of the interface: from a single-stage design that
+reproduces `qvar()` (case 1), through two-stage designs with non-response
+correction, stratification and calibration (cases 2 to 6), to three-stage
+designs with corrections at several stages and calibration at an
+intermediate stage (cases 7 to 9).
+
+The cases are cumulative — the data prepared in one case is reused in the
+next — and follow a fixed pattern: the `qvar_ms()` call first, then a
+hand-built equivalent using `define_variance_wrapper()` and the core
+`gustave` functions, which makes every methodological step explicit and
+serves as ground truth. Readers in a hurry can jump to the case matching
+their design and work backwards.
+
+## Conventions
 
 Before anything else, the conventions used by `qvar_ms()` — most errors in
 practice come from overlooking one of them:
@@ -99,7 +118,6 @@ practice come from overlooking one of them:
 | `calibration_weight`   | one stage          | **cumulated**     | none               |
 | `dissemination_*`, `scope_dummy` | last stage | cumulated        | required / none    |
 
-# How to use `qvar_ms()`
 
 ## Case 1: single stage — backward compatibility with `qvar()`
 
@@ -108,7 +126,7 @@ degenerates to the standard single-stage case and should reproduce `qvar()`
 exactly. This is the first thing to check.
 
 ```{r case1-data}
-lfs_samp_dwel$diss    <- 1
+lfs_samp_dwel$diss    <- TRUE
 lfs_samp_dwel$w_dwel  <- 1 / lfs_samp_dwel$pik_dwel
 lfs_samp_dwel$w_final <- 1 / lfs_samp_dwel$pik
 ```
@@ -177,7 +195,10 @@ qvar2 <- qvar_ms(
 The hand-built equivalent makes the Rao (1975) decomposition explicit:
 one within-area variance per primary unit, multiplied by the area weight
 (*first power* — this is the Rao row weight), plus the first-stage
-variance computed on the estimated area totals.
+variance computed on the estimated area totals. The generalization to more
+stages and to non-response phases proceeds recursively, the Rao row weight 
+at stage $k$ being the cumulated corrected weight of stages $1, \dots, k-1$. 
+This is the estimator implemented by the SAS `Poulpe` macros (Caron, 1998).
 
 ```{r case2-benchmark}
 var_srs_two <- function(y, smp_area, smp_dwel) {
@@ -222,8 +243,13 @@ effective strata are the crossing of the parent unit and of the declared
 strata variable (here, none), so that one single stratified `var_srs()`
 call is algebraically identical to the sum of per-area variances — the Rao
 weight, constant within each area, being passed through the `w` argument.
-The `nr_stage*` and `sampling_stage*` components printed by the hand-built
-version match the names used internally by `qvar_ms()`.
+The components printed by the hand-built version (`srs-dwel`, `srs-area`) correspond one-to-one to the sampling_stage2 and sampling_stage1 components that `qvar_ms()` reports in its "components" diagnostic (see diagnostic 
+section below):
+
+```{r}
+qvar2(lfs_samp_dwel, total(income), diagnostics = "components")
+```
+
 
 ## Case 3: non-response correction at the last stage
 
@@ -708,8 +734,9 @@ lfs_samp_ind <- gustave::lfs_samp_ind %>%
   mutate(w_ind = 1, pik_ind = 1)
 
 set.seed(123)
-lfs_samp_ind$prep_ind <- runif(nrow(lfs_samp_ind))
-lfs_samp_ind$rep_ind  <- lfs_samp_ind$prep_ind <= 0.8
+lfs_samp_ind$rand_ind <- runif(nrow(lfs_samp_ind))
+lfs_samp_ind$rep_ind  <- lfs_samp_ind$rand_ind <= 0.8
+lfs_samp_ind$prep_ind  <- 0.8
 lfs_samp_ind$w_nrc    <- lfs_samp_ind$w_ind / lfs_samp_ind$prep_ind  # conditional!
 lfs_samp_ind$w_final  <- lfs_samp_ind$w_area * lfs_samp_ind$w_nrc_dwel * lfs_samp_ind$w_nrc
 lfs_samp_ind$w_final[!lfs_samp_ind$rep_ind] <- 0
@@ -964,16 +991,16 @@ computes the variance of the *uncalibrated* estimator alongside (the
 Horvitz-Thompson estimator corrected for non-response), by carrying a
 duplicated, non-residualized copy of the linearized variable through the
 same single pass. The "effect" column is thus the per-component
-effect of calibration. Note : the "without" column is the variance of 
-a *different estimator* (with a different point estimate because without 
-calibration step).
+effect of calibration. Note: the "without" column is the variance of 
+a *different estimator* (with a different point estimate since it 
+involves no calibration step).
 
 **Warning signs.**
 
 * *A non-zero calibration effect below the calibration stage.* Components
   of stages strictly below the calibration stage are computed before the
   residualization in the upward loop: they must display exactly `+0.0 %`.
-  Anything else indicates a bug or a misdeclared `calibration_level`.
+  Anything else indicates a bug or a misdeclared `calibration_stage`.
 * *A dominant first-stage component.* When `sampling_stage1` accounts for
   most of the variance, the clustering of the design is the binding
   constraint: increasing the number of final units per PSU will barely
@@ -981,9 +1008,8 @@ calibration step).
   the number of PSUs will.
 * *A positive calibration effect on a variable supposedly related to the
   margins.* The variance reduction of calibration is only guaranteed for
-  variables that the calibration variables explain (Särndal, Swensson and
-  Wretman, 1992, ch. 6). A `+` effect on a target variable of the survey
-  suggests reviewing the choice of margins.
+  variables that the calibration variables explain. A `+` effect on 
+  a target variable of the survey suggests reviewing the choice of margins.
 
 ## Design effect (`"deff"`)
 
@@ -1014,10 +1040,8 @@ homogeneity is derived:
 $$\mathrm{roh} = \frac{\mathrm{deff}_c - 1}{\bar m - 1},$$
 
 with $\bar m$ the mean number of final units per primary sampling unit.
-`roh` estimates the intra-cluster correlation of the study variable and is
-the key input for designing future waves of the survey. The model-based
-justification of this decomposition is given by Gabler, Häder and Lahiri
-(1999).
+`roh` estimates the intra-cluster correlation of the study variable and can
+be used as an input for designing future waves of the survey.
 
 ```{r diag-deff}
 qvar6(lfs_samp_dwel, total(income), diagnostics = "deff")
@@ -1050,11 +1074,10 @@ order, like variance estimators with
 
 $$\mathrm{df} = (\text{number of PSUs}) - (\text{number of first-stage strata})$$
 
-degrees of freedom (Korn and Graubard, 1999; Rust and Rao, 1996). The
-normal-based confidence intervals produced by gustave implicitly assume
-these degrees of freedom to be large. The `"dof"` diagnostic prints the
-rule-of-thumb df and, when it is small, the width correction a Student-based
-interval would apply:
+degrees of freedom. The normal-based confidence intervals produced by 
+`gustave` implicitly assume these degrees of freedom to be large. The 
+`"dof"` diagnostic prints the rule-of-thumb df and, when it is small, 
+the width correction a Student-based interval would apply:
 
 ```
 -- Degrees of freedom --
@@ -1074,11 +1097,11 @@ versus, on a design with few primary units:
 
 * *df below ~30.* Normal intervals undercover; report t-based intervals or
   at least mention the issue. Below ~10, the variance estimate itself is
-  unstable and replication-based cross-checks are advisable (Wolter, 2007).
+  unstable.
 * *Domain estimation concentrated in few PSUs.* The nominal df is an upper
   bound: for a domain present in only a handful of PSUs, the effective df
-  is closer to the number of PSUs containing the domain (Korn and Graubard,
-  1999, sec. 5.2). Cross-read with the `"domains"` diagnostic.
+  is closer to the number of PSUs containing the domain. Cross-read with 
+  the `"domains"` diagnostic.
 
 ## Non-response diagnostics (`"nr"`)
 
@@ -1096,16 +1119,14 @@ qvar9(lfs_samp_ind, total(income), diagnostics = "nr")
 
 * *Very small minimum response probabilities.* A $\hat p_{\min}$ below
   roughly 0.1 means some units carry a tenfold non-response weight: a
-  single such unit can dominate a domain estimate. The usual remedies are
-  collapsing reweighting cells or trimming (Little and Vartivarian, 2005,
-  discuss when reweighting increases variance without reducing bias).
+  single such unit can dominate a domain estimate.
 * *A gap between unweighted and weighted response rates.* It indicates
   that response propensity is correlated with the design weights — the
   non-response mechanism differs across sampling strata or stages, which is
   worth modelling explicitly (Särndal and Lundström, 2005).
 * *An inflation factor well above 1.* The variance cost of reweighting
   itself; combined with a weak relation between the reweighting cells and
-  the study variable, it is a net loss (Little and Vartivarian, 2005).
+  the study variable, it is a net loss. (Little and Vartivarian, 2005)
 * At the last stage, the unweighted rate includes out-of-scope units in
   its denominator when a `scope_dummy` is declared; interpret accordingly.
 
@@ -1114,7 +1135,8 @@ qvar9(lfs_samp_ind, total(income), diagnostics = "nr")
 Domain estimation through `by` and `where` is deceptively easy: the
 linearized variable is simply zeroed outside the domain, and the machinery
 runs unchanged. The `"domains"` diagnostic counts the non-zero
-observations behind each requested statistic and flags small domains:
+observations behind each requested statistic and flags small domains 
+when observations falls below 50:
 
 ```{r diag-domains}
 qvar6(lfs_samp_dwel,
@@ -1126,10 +1148,9 @@ qvar6(lfs_samp_dwel,
 
 **Warning signs.**
 
-* *Domains below a few dozen observations.* Both the estimate and its
+* *Domains below 50 observations.* Both the estimate and its
   estimated variance are unstable; this is the natural boundary where
-  design-based estimation gives way to small area methods (Rao and Molina,
-  2015).
+  design-based estimation gives way to small area methods.
 * *Small domains combined with a low df.* The two previous caveats
   compound: a domain concentrated in a handful of PSUs has both an unstable
   variance and fewer effective degrees of freedom than the nominal rule
@@ -1141,7 +1162,7 @@ qvar6(lfs_samp_dwel,
 |---|---|---|
 | deff far from 1 under a (near-)SRS design | weight convention error (conditional vs cumulated) | check `"nr"` probabilities and the calibration g-ratio warning |
 | dominant `sampling_stage1` component | clustering cost | more PSUs, not more units per PSU; read `roh` |
-| calibration effect expected `+0.0 %` but non-zero below the calibration stage | misdeclared `calibration_level` or bug | check the wrapper with `inspect_wrapper_ml()` |
+| calibration effect expected `+0.0 %` but non-zero below the calibration stage | misdeclared `calibration_stage` or bug | check the wrapper with `inspect_wrapper()` |
 | large `deff_weights` | extreme weights | inspect `"nr"` minimum probabilities; trim or collapse cells |
 | df < 30 | few PSUs | report t-based intervals; consider replication cross-check |
 | small-domain flag | thin domain | precision thresholds; small area estimation |
@@ -1153,8 +1174,7 @@ decomposition: they share its assumptions — invariance and independence
 across stages, Poisson non-response within cells, first-order linearization
 of calibration — and cannot validate those assumptions from within. The
 standard external check is to re-estimate a few key variances with a
-replication method (jackknife dropping one PSU at a time, or the Rao-Wu
-rescaled bootstrap; Wolter, 2007; Rust and Rao, 1996): agreement between
+replication method (jackknife or bootstrap): agreement between
 the analytical and replicated variances is the strongest available evidence
 that the design description encoded in the wrapper is faithful. This is a
 natural extension for a future version.
@@ -1169,10 +1189,21 @@ wrappers so convenient to *use* (one self-contained object, no need to
 re-specify the design at each estimation), but it also makes them opaque:
 printing the function body tells you nothing about the survey it encodes.
 
+`qvar_notes()` recalls the definition, the notes and the warnings 
+emitted when the wrapper was defined. This is often enough to answer the 
+most common question about a wrapper someone else defined: *"which features 
+does it take into account, and did anything unusual happen at definition 
+time?"* — the welcome message, the automatic coercions, the strata crossing 
+notes and the single-unit strata warnings are all there.
+
+```{r inspect-print, eval = TRUE}
+qvar_notes(qvar9)
+```
+
 `inspect_wrapper()` opens the box. Given a wrapper produced by
 `qvar_ms()`, it prints a structured console summary and generates an HTML
 report describing the reference population, each sampling stage, the
-definition log, and — most importantly — the exact variance estimation
+methodological notes, and — most importantly — the exact variance estimation
 pipeline that will be executed. It serves three audiences at once:
 
 * **documentation** — the report is a self-contained methodological
@@ -1187,29 +1218,8 @@ pipeline that will be executed. It serves three audiences at once:
   ranges) are visible at a glance in the per-stage cards, *before* any
   estimation is run.
 
-## Quick inspection from the console
-
-Two lightweight tools come first. Printing a `qvar_ms` wrapper displays
-its definition call and the notes and warnings emitted when it was defined
-(they are stored as attributes at definition time, see `qvar_notes()`):
-
-```{r inspect-print, eval = TRUE}
-qvar9               # print method: definition call + definition log
-qvar_notes(qvar9)   # the same log, programmatically accessible
-```
-
-This is often enough to answer the most common question about a wrapper
-someone else defined: *"which features does it take into account, and did
-anything unusual happen at definition time?"* — the welcome message, the
-automatic coercions, the strata crossing notes and the single-unit strata
-warnings are all there.
-
-## The full report
-
-For anything deeper, call the inspector:
-
 ```{r inspect-call, eval = TRUE}
-inspect_wrapper(qvar9)
+inspect_wrapper(qvar9, plot = FALSE)
 ```
 
 The function prints a console summary and opens an HTML report in the
@@ -1217,10 +1227,10 @@ browser (use `plot = FALSE` for console-only, or `file =` to choose where
 the report is written, e.g. to archive it alongside the survey
 documentation).
 
-The HTML report presents the same information in five cards, described
+The HTML report presents the same information in  a series of cards, described
 below with their intended screenshots.
 
-### Reference population
+## Reference population
 
 ```{r inspect-fig-reference, echo = FALSE, out.width = "100%", fig.cap = "Reference population card of the HTML report."}
 knitr::include_graphics("figures/inspect_reference.png")
@@ -1239,7 +1249,7 @@ analysis identifier (the column the estimation file must contain), the
 number of reference units, a preview of the first identifiers and weights,
 the range of the positive weights and the number of zero-weight units.
 
-### Per-stage cards
+## Per-stage cards
 
 ```{r inspect-fig-stages, echo = FALSE, out.width = "100%", fig.cap = "Per-stage cards of the HTML report."}
 knitr::include_graphics("figures/inspect_stages.png")
@@ -1265,7 +1275,7 @@ what to look for, both drawn from real debugging sessions:
   weight range at odds with the sampling fractions of the design, points
   to the same family of weight convention errors.
 
-### Methodological notes
+## Methodological notes
 
 ```{r inspect-fig-log, echo = FALSE, out.width = "100%", fig.cap = "Methodological notes card: notes and warnings emitted at definition time."}
 knitr::include_graphics("figures/inspect_notes.png")
@@ -1277,7 +1287,7 @@ message (INFO), the automatic coercions and strata-crossing notes (NOTE,
 blue), and the warnings (orange) — excluded single-unit strata, unequal
 weights replaced by stratum means, suspicious calibration g-ratios.
 
-### Pipeline table and diagram
+## Pipeline table and diagram
 
 ```{r inspect-fig-pipeline, echo = FALSE, out.width = "100%", fig.cap = "The variance estimation pipeline"}
 knitr::include_graphics("figures/inspect_pipeline.png")
@@ -1305,13 +1315,13 @@ component dominates, the diagram shows where in the design it comes from.
 knitr::include_graphics("figures/inspect_diagram.png")
 ```
 
-### Technical parameters and raw technical data
+## Technical parameters and raw technical data
 
 ```{r inspect-fig-param, echo = FALSE, out.width = "100%", fig.cap = "Technical parameters."}
 knitr::include_graphics("figures/inspect_param.png")
 ```
 
-The technical parameters lists the switchable arguments of the
+The technical parameters cards lists the switchable arguments of the
 wrapper (`single_unit_strata`, `diagnostics`) with their defaults — the
 knobs a user can turn at estimation time without redefining anything. 
 
@@ -1324,25 +1334,7 @@ recursively into the per-stage lists (identifiers, weights, exclusion
 flags, precalculated matrices) with types, dimensions and value previews.
 It is the map for advanced users who want to go beyond the report.
 
-## Programmatic use
-
-`inspect_wrapper()` invisibly returns everything it displays, as a
-list with elements `reference`, `levels`, `calibration` and `pipeline`.
-This makes the inspection scriptable — for example, a lightweight quality
-gate in a production pipeline:
-
-```{r inspect-programmatic, eval = FALSE}
-info <- inspect_wrapper(qvar9, plot = FALSE)
-
-# Fail early if any stage lost more than 5 % of its units to
-# single-unit strata exclusion
-excl_rate <- sapply(info$levels, function(l) l$n_excluded / l$n_units)
-stopifnot(all(excl_rate < 0.05))
-
-# Check that the response probabilities are within a plausible range
-```
-
-Combined with `qvar_notes()` for the definition log and the `diagnostics`
+Combined with `qvar_notes()` for the methodological notes and the `diagnostics`
 technical parameter for estimation-time output, the inspector completes a
 three-level tooling: the *log* tells what happened at definition, the
 *report* describes what the wrapper is, and the *diagnostics* tell what
@@ -1371,9 +1363,16 @@ Along the way, the wrapper grew from a computing object into a
 methodological one. The `diagnostics` technical parameter allows a quality control of the variance estimation procedure — variance components with 
 the exact effect of calibration, design effect and its Kish decomposition, 
 degrees of freedom, non-response and domain diagnostics — while 
-`qvar_notes()` and `inspect_wrapper_ms()` make the wrapper itself readable: 
+`qvar_notes()` and `inspect_wrapper()` make the wrapper itself readable: 
 what happened at definition time, what the encoded design is, and which 
 pipeline will actually execute.
+
+More complex multistage cases — unequal probabilities within strata, 
+balanced sampling at the first stage, shared or integrated
+weights — are to be handled with the core functions of the `gustave`
+package, i.e. `define_variance_wrapper()` together with `varDT()`,
+`var_pois()` and `res_cal()`, following the patterns of the hand-built
+wrappers of this vignette.
 
 Two directions naturally extend this work. The first is external
 cross-validation against the `survey` package (Lumley, 2004), the *de facto*
@@ -1400,67 +1399,20 @@ estimates would then flow directly into graphs and tables, instead of
 living in a separate results file. This design-object layer is under
 construction and beyond the scope of this vignette.
 
-# Methodological notes and scope
-
-**The decomposition.** Writing $\hat{Y} = \sum_{i \in s_1} w_{1i}
-\hat{Y}_i$ with $\hat{Y}_i$ the estimated totals of the primary units, the
-implemented estimator is, for two stages,
-
-$$\hat{V}(\hat{Y}) \;=\; \hat{V}_1\big(\{\hat{Y}_i\}\big) \;+\;
-\sum_{i \in s_1} w_{1i}\, \hat{V}_{2i},$$
-
-that is: the first-stage variance formula applied to the *estimated*
-totals, plus the second-stage variance estimators weighted by the *first
-power* of the first-stage weight (Rao, 1975; Särndal, Swensson and
-Wretman, 1992, result 4.5.1). The generalization to more stages and to
-non-response phases proceeds recursively, the Rao row weight at stage $k$
-being the cumulated corrected weight of stages $1, \dots, k-1$. This is
-the estimator implemented by the SAS Poulpe macros, and the reason why the
-gustave variance functions expose a linear `w` argument.
-
-**Assumptions.** The decomposition assumes the design is invariant and
-independent across stages, simple random sampling (possibly stratified)
-with equal probabilities within strata at each stage, and non-response
-following a Poisson mechanism within the reweighting cells. `qvar_ms()`
-enforces the equal-probability assumption stage by stage (mean weight per
-stratum with a warning otherwise) and excludes single-unit strata, exactly
-like `qvar()`.
-
-**What to check first when results look off.** In order of likelihood:
-(1) a conditional weight that is actually cumulated (`sampling_weight` or
-`nrc_weight`) — watch the calibration g-ratio warning and the response
-probability ranges; (2) a stage file restricted to respondents, whereas it
-must contain all sampled units; (3) units attached to a non-responding
-parent (blocked by an explicit check).
-
-**Beyond qvar_ms.** More complex multistage cases — unequal probabilities
-within strata, balanced sampling at the first stage, shared or integrated
-weights — are to be handled with the core functions of the gustave
-package, i.e. `define_variance_wrapper()` together with `varDT()`,
-`var_pois()` and `res_cal()`, following the patterns of the hand-built
-wrappers of this vignette.
-
 # References
 
 * Caron N. (1998), "Le logiciel Poulpe : aspects méthodologiques",
   *Actes des Journées de méthodologie statistique*,
   <http://jms-insee.fr/jms1998s03_1/>
-* Gabler S., Häder S., Lahiri P. (1999), "A model based justification of
-  Kish's formula for design effects for weighting and clustering",
-  *Survey Methodology*, 25(1), 105–106.
 * Kish L. (1965), *Survey Sampling*, Wiley.
 * Kish L. (1992), "Weighting for unequal P_i", *Journal of Official
   Statistics*, 8(2), 183–200.
-* Korn E.L., Graubard B.I. (1999), *Analysis of Health Surveys*, Wiley.
 * Little R.J.A., Vartivarian S. (2005), "Does weighting for nonresponse
   increase the variance of survey means?", *Survey Methodology*, 31(2),
   161–168.
+* Lumley T. (2004), "Analysis of Complex Survey Samples", *Journal of Statistical Software*, 9(8), 1–19.
 * Rao J.N.K. (1975), "Unbiased variance estimation for multistage
-  designs", *Sankhya*, C n°37.
-* Rao J.N.K., Molina I. (2015), *Small Area Estimation*, 2nd ed., Wiley.
-* Rust K.F., Rao J.N.K. (1996), "Variance estimation for complex surveys
-  using replication techniques", *Statistical Methods in Medical
-  Research*, 5(3), 283–310.
+  designs", *Sankhya*, C n°37, 133–139.
 * Särndal C.-E., Lundström S. (2005), *Estimation in Surveys with
   Nonresponse*, Wiley.
 * Särndal C.-E., Swensson B., Wretman J. (1992), *Model Assisted Survey

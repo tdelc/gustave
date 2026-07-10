@@ -43,6 +43,12 @@
 #'   elements meaning no stratification at the corresponding stage). From
 #'   stage 2 onwards, the effective strata are the crossing of the parent
 #'   unit and of the declared strata variable.
+#' @param single_unit_strata A character vector of length 1 specifying the action to 
+#'   take for strata containing only a single responding unit. Options are: 
+#'   \code{"exclude"}: Excludes the single-unit strata from the analysis 
+#'   (default) ; \code{"poisson"}: Estimates the variance using a 
+#'   Poisson approximation. Note that exhaustive strata are not affected 
+#'   by this setting.
 #' @param nrc_weight,response_prob,response_dummy,nrc_dummy Lists of length
 #'   \code{sampling_stages} (\code{NULL} elements meaning no non-response
 #'   correction at the corresponding stage). A single variable name is
