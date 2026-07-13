@@ -3,19 +3,19 @@ title: "Multistage variance estimation with qvar_ms"
 author: "Thomas Delclite"
 date: "`r Sys.Date()`"
 output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
   rmarkdown::pdf_document:
     fig_width: 8
     fig_height: 6
     toc: true
     number_sections: true
     latex_engine: xelatex
-  rmarkdown::html_vignette:
-    toc: true
-    toc_depth: 2
 vignette: >
   %\VignetteIndexEntry{Multistage variance estimation with qvar_ms}
-  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
 ---
 
 ```{r setup, include = FALSE}
