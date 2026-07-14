@@ -189,7 +189,7 @@ qvar_ms <- function(data, ..., by = NULL, where = NULL,
   
   attr(qvar_variance_wrapper, "definition_log") <- definition_log
   attr(qvar_variance_wrapper, "definition_call") <- match.call()
-  class(qvar_variance_wrapper) <- c("qvar_ml_wrapper", class(qvar_variance_wrapper))
+  class(qvar_variance_wrapper) <- c("qvar_ms_wrapper", class(qvar_variance_wrapper))
   
   # Step 2: Export the variance wrapper
   if(define){
@@ -250,6 +250,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     "data argument must refer to a data.frame or to a list of data.frame ",
     "(one per sampling stage, from the highest to the lowest one)."
   )
+  
   if(missing(sampling_stages)){
     sampling_stages <- length(data)
     if(sampling_stages > 1) note(
@@ -261,6 +262,16 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     "The data argument is a list of ", length(data), " data.frame(s) but sampling_stages = ",
     sampling_stages, ". Both should match."
   )
+  # data.frame instead of tibble
+  for(k in seq_len(sampling_stages)){
+    if (!"data.frame" %in% class(data[[k]])) 
+      stop("The dataset at stage ",k," is not a data.frame")
+    if (!all("data.frame" == class(data[[k]]))){
+      warn("The dataset at stage ",k," is not only a data.frame (a tibble ?). 
+           It is converted into data.frame for the function.")
+      data[[k]] <- as.data.frame(data[[k]])
+    }
+  }
   
   as_stage_list <- function(x, arg_name, default_last = FALSE){
     if(is.null(x)) return(vector("list", sampling_stages))
@@ -373,10 +384,9 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
   
   # Step 2: Control that arguments do exist and retrieve their value ----
   
+  
+  
   # Step 2.1: Evaluation of all arguments
-  ## <<< ML: data a deja ete evalue au Step 1.2 ; arg est reconstruit a partir
-  ## des arguments normalises (et non plus via match.call) pour que les listes
-  ## par niveau soient directement indexables (arg$strata[[k]], etc.)
   arg <- list(
     id = id, parent_id = parent_id,
     dissemination_dummy = dissemination_dummy, dissemination_weight = dissemination_weight,
@@ -1191,18 +1201,18 @@ check_diagnostics <- function(diagnostics){
 #'
 #' @description \code{qvar_notes} re-displays the messages, notes and
 #'   warnings that were emitted when a variance wrapper was defined by
-#'   \code{\link{qvar_ml}} (survey features taken into account, automatic
+#'   \code{\link{qvar_ms}} (survey features taken into account, automatic
 #'   coercions, excluded strata, weight consistency checks, and so on),
 #'   together with the definition call. These are stored as attributes of
 #'   the wrapper at definition time.
 #'
 #' @param wrapper A variance estimation wrapper defined by
-#'   \code{\link{qvar_ml}}.
+#'   \code{\link{qvar_ms}}.
 #'
 #' @return The definition log, as a character vector (invisibly).
 #'
 #' @examples \dontrun{
-#' precision <- qvar_ml(..., define = TRUE)
+#' precision <- qvar_ms(..., define = TRUE)
 #' qvar_notes(precision)
 #' }
 #'
@@ -1213,7 +1223,7 @@ qvar_notes <- function(wrapper){
   if(is.null(log)){
     message(
       "No definition log is stored in this wrapper ",
-      "(only wrappers defined by qvar_ml() carry one)."
+      "(only wrappers defined by qvar_ms() carry one)."
     )
     return(invisible(NULL))
   }
@@ -1229,12 +1239,12 @@ qvar_notes <- function(wrapper){
 
 
 #' @export
-print.qvar_ml_wrapper <- function(x, ...){
-  cat("Variance estimation wrapper defined by qvar_ml()\n")
+print.qvar_ms_wrapper <- function(x, ...){
+  cat("Variance estimation wrapper defined by qvar_ms()\n")
   cat("================================================\n\n")
   qvar_notes(x)
   cat(
-    "\nUse inspect_wrapper_ml() for a full report, ",
+    "\nUse inspect_wrapper_ms() for a full report, ",
     "and body()/unclass() to display the underlying function.\n", sep = ""
   )
   invisible(x)
