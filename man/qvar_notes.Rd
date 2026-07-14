@@ -8,7 +8,7 @@ qvar_notes(wrapper)
 }
 \arguments{
 \item{wrapper}{A variance estimation wrapper defined by
-\code{\link{qvar_ml}}.}
+\code{\link{qvar_ms}}.}
 }
 \value{
 The definition log, as a character vector (invisibly).
@@ -16,14 +16,14 @@ The definition log, as a character vector (invisibly).
 \description{
 \code{qvar_notes} re-displays the messages, notes and
   warnings that were emitted when a variance wrapper was defined by
-  \code{\link{qvar_ml}} (survey features taken into account, automatic
+  \code{\link{qvar_ms}} (survey features taken into account, automatic
   coercions, excluded strata, weight consistency checks, and so on),
   together with the definition call. These are stored as attributes of
   the wrapper at definition time.
 }
 \examples{
 \dontrun{
-precision <- qvar_ml(..., define = TRUE)
+precision <- qvar_ms(..., define = TRUE)
 qvar_notes(precision)
 }
 

@@ -267,8 +267,7 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     if (!"data.frame" %in% class(data[[k]])) 
       stop("The dataset at stage ",k," is not a data.frame")
     if (!all("data.frame" == class(data[[k]]))){
-      warn("The dataset at stage ",k," is not only a data.frame (a tibble ?). 
-           It is converted into data.frame for the function.")
+      warn("The dataset at stage ",k," is not only a data.frame (a tibble ?). It is converted into data.frame for the function.")
       data[[k]] <- as.data.frame(data[[k]])
     }
   }
