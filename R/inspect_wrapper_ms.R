@@ -715,18 +715,18 @@ build_ms_html <- function(title, definition_log, definition_call,
 </head>
 <body>
 
+<h1>', title, '</h1>
 <div class="layout">
   <div class="left-panel">
-    <h1>', title, '</h1>
     ', ref_html, '
   </div>
   <div class="right-panel">
-  ', build_notes_card(definition_log, definition_call), '
+    ', stage_cards, '
   </div>
 </div>
 <br/>
 <div class="right-panel">
-    ', stage_cards, '
+  ', build_notes_card(definition_log, definition_call), '
 </div>
 <br/>
 <div class="layout-full">
@@ -782,9 +782,11 @@ build_notes_card <- function(definition_log, definition_call = NULL) {
   
   paste0(
     '<div class="card">',
-    '<h2>Methodological notes</h2>',
+    '<details><summary><h2 style="display:inline">Methodological notes</h2>',
+    ' <span class="muted">(click to expand)</span></summary>',
     call_html,
     paste(items, collapse = "\n"),
-    '</div>'
+    '</div>',
+    '</details>'
   )
 }

@@ -1243,7 +1243,7 @@ print.qvar_ms_wrapper <- function(x, ...){
   cat("================================================\n\n")
   qvar_notes(x)
   cat(
-    "\nUse inspect_wrapper_ms() for a full report, ",
+    "\nUse inspect_wrapper() for a full report, ",
     "and body()/unclass() to display the underlying function.\n", sep = ""
   )
   invisible(x)
