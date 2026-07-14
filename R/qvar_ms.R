@@ -614,6 +614,13 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
       )
     }
     
+    # combine response_prob and nrc_weight
+    if(!is.null(lv$response_prob) && is.null(lv$nrc_weight)){
+      idx <- lv$response_dummy & lv$nrc_dummy
+      lv$nrc_weight <- lv$sampling_weight
+      lv$nrc_weight[idx] <- lv$sampling_weight[idx] / lv$response_prob[idx]
+    }
+    
     if(k == sampling_stages){
       
       # dissemination_dummy
@@ -683,13 +690,6 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     }
     
     lev[[k]] <- lv
-  }
-  
-  # combine response_prob and nrc_weight
-  if(!is.null(lv$response_prob) && is.null(lv$nrc_weight)){
-    idx <- lv$response_dummy & lv$nrc_dummy
-    lv$nrc_weight <- lv$sampling_weight
-    lv$nrc_weight[idx] <- lv$sampling_weight[idx] / lv$response_prob[idx]
   }
   
   # Step 4: Define methodological quantities ----
