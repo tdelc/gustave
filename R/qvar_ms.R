@@ -737,22 +737,24 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     # Exclude strata with only one sampled unit
     strata_with_one_sampled_unit <-
       names(which(tapply(lv$id[!samp_exclude], strata_eff[!samp_exclude], length) == 1))
+    n_resp <- tapply(lv$response_dummy[!samp_exclude], strata_eff[!samp_exclude], sum)
+    strata_with_one_responding_unit <- names(which(n_resp == 1))
+    samp_poisson <- stats::setNames(rep(FALSE, length(lv$id)), lv$id)
     if(length(strata_with_one_sampled_unit) > 0){
-      if (single_unit_strata == "exclude"){
-        warn(
-          "The following strata", lab, " contain less than two sampled units: ",
-          display_only_n_first(strata_with_one_sampled_unit), ". ",
-          "They are excluded from the variance estimation process (but kept for point estimates)."
-        )        
-      }else{
-        warn(
-          "The following strata", lab, " contain less than two sampled units: ",
-          display_only_n_first(strata_with_one_sampled_unit), ". ",
-          "They are treated with the poisson estimation process."
-        )
-      }
-
-      samp_exclude <- samp_exclude | as.character(strata_eff) %in% strata_with_one_sampled_unit
+      in_single_samp <- as.character(strata_eff) %in% strata_with_one_sampled_unit
+      in_single_resp <- as.character(strata_eff) %in% strata_with_one_responding_unit
+      samp_poisson <- stats::setNames(in_single_resp & lv$sampling_weight != 1, lv$id)
+      warn(
+        "The following strata", lab, " contain less than two sampled units: ",
+        display_only_n_first(strata_with_one_sampled_unit), ". ",
+        "They are excluded from the stratified SRS variance estimation (but kept for point estimates).",
+        if(any(samp_poisson)) paste0(
+          " Among them, ", sum(samp_poisson), " unit(s) are NOT exhaustive (pik < 1): ",
+          "their variance contribution is dropped when single_unit_strata = \"exclude\" ",
+          "and approximated by a Poisson term when single_unit_strata = \"poisson\"."
+        ) else ""
+      )
+      samp_exclude <- samp_exclude | in_single_samp | samp_poisson
     }
     
     # Enforce equal probabilities in each stratum
@@ -796,11 +798,25 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
         lv$dissemination_dummy &
           abs(cumulated_weight - lv$dissemination_weight) > 1e-6 * abs(lv$dissemination_weight)
       ]
-      if(length(guessed_weight_not_matching_dissemination_weight)) stop(
-        "The following units have a disseminated weight (", arg$dissemination_weight,
-        ") that does not match the one guessed from the survey description: ",
-        display_only_n_first(guessed_weight_not_matching_dissemination_weight), "."
-      )
+      if(length(guessed_weight_not_matching_dissemination_weight)) {
+        table_guessed_weight <- data.frame(
+          id = guessed_weight_not_matching_dissemination_weight,
+          sampling_weight = lv$sampling_weight[guessed_weight_not_matching_dissemination_weight],
+          cumulated_weight = cumulated_weight[guessed_weight_not_matching_dissemination_weight],
+          dissemination_weight = lv$dissemination_weight[guessed_weight_not_matching_dissemination_weight]
+        )
+        table_str <- paste(
+          capture.output(print(head(table_guessed_weight))),
+          collapse = "\n"
+        )
+        stop(
+          "The following units have a disseminated weight (", arg$dissemination_weight,
+          ") that does not match the one guessed from the survey description: ",
+          display_only_n_first(guessed_weight_not_matching_dissemination_weight),".\n\n",
+          table_str,
+          call. = FALSE
+        )
+      }
     }
     
     # Sampling
@@ -812,7 +828,8 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
     samp$precalc <- suppressMessages(with(samp, var_srs(
       y = NULL, pik = 1 / weight[!exclude], strata = strata[!exclude]
     )))
-    samp <- samp[c("id", "exclude", "precalc")]
+    samp$poisson <- samp_poisson[samp$id]
+    samp <- samp[c("id", "exclude", "precalc", "poisson")]
     
     # Non-reponse
     if(!is.null(lv$nrc_weight)){
@@ -820,6 +837,13 @@ define_qvar_ms_variance_wrapper <- function(data, sampling_stages = 1,
       nrc$id <- lv$id[lv$response_dummy]
       nrc$sampling_weight <- lv$sampling_weight[nrc$id]
       nrc$response_prob <- (lv$sampling_weight / lv$nrc_weight)[nrc$id]
+      
+      if (any(is.infinite(nrc$response_prob))) stop(
+        "After calculation, some probabilities of response the weights after non-response correction ", lab, " contain infinite values. Maybe some weights after non-response correction is equal to 0 in the dataset."
+      )
+      if (anyNA(nrc$response_prob)) stop(
+        "After calculation, some probabilities of response the weights after non-response correction ", lab, " contain missing (NA) values."
+      )
     }else nrc <- NULL
     
     # Calibration
@@ -1004,7 +1028,7 @@ qvar_ms_variance_function <- function(y, stages, calib,
     
     if (single_unit_strata == "poisson") {
       agg_w <- lev_k$agg_weight[rownames(y)]
-      solo  <- lev_k$samp$exclude & abs(agg_w - 1) > 1e-12
+      solo <- lev_k$samp$poisson[rownames(y)]
       if (any(solo)) {
         var[[paste0("sampling_pois", if (length(stages) > 1) paste0("_stage", k) else "")]] <- var_pois(
           y   = y[solo, , drop = FALSE],
