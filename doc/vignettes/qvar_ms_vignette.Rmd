@@ -22,8 +22,8 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-  message = TRUE,  # qvar_ms messages and notes are part of the pedagogy
-  warning = TRUE   # so are its warnings (single-unit strata, etc.)
+  message = TRUE, 
+  warning = TRUE
 )
 ```
 
@@ -78,6 +78,12 @@ hand-built equivalent using `define_variance_wrapper()` and the core
 serves as ground truth. Readers in a hurry can jump to the case matching
 their design and work backwards.
 
+`qvar_ms()` uses `varDT()`  to estimate the variance of the estimator of 
+a total in the case of a balanced sampling design with equal or unequal 
+probabilities using Deville-Tillé (2005) formula. All examples use the 
+function `var_srs()`, which is a convenience wrapper for the (stratified) 
+simple random sampling case.
+
 ## Conventions
 
 Before anything else, the conventions used by `qvar_ms()` — most errors in
@@ -93,9 +99,11 @@ practice come from overlooking one of them:
   the `id` variable of the previous stage is assumed to be present).
 * **Conditional weights.** `sampling_weight` and `nrc_weight` are
   **conditional** weights at the considered stage: the inverse of the
-  inclusion (resp. response) probability *given the stages above* (Poulpe
-  convention). This is the single most important convention of the
-  interface.
+  inclusion (resp. response) probability *given the stages above*. This 
+  is the single most important convention of the interface.
+* **Response probability.** `response_prob` can be used instead of 
+  `nrc_weight` to include response probability at each stage of 
+  non-response.
 * **Cumulated calibration weight.** `calibration_weight` is the
   **cumulated** weight at the calibration stage — the weight actually used
   in the calibration equations.
@@ -113,7 +121,7 @@ practice come from overlooking one of them:
 | `parent_id`            | stages 2..L        | —                 | id of stage above  |
 | `sampling_weight`      | yes (length L)     | conditional       | required           |
 | `strata`               | yes (list)         | —                 | none               |
-| `nrc_weight`, `response_dummy`, `nrc_dummy` | yes (list) | conditional | last stage |
+| `nrc_weight`, `response_dummy`, `response_dummy`, `nrc_dummy` | yes (list) | conditional | last stage |
 | `calibration_stage`    | one stage          | —                 | last stage         |
 | `calibration_weight`   | one stage          | **cumulated**     | none               |
 | `dissemination_*`, `scope_dummy` | last stage | cumulated        | required / none    |
@@ -168,7 +176,7 @@ final dwelling weight is rebuilt as the product of the **conditional**
 weights of the two stages.
 
 ```{r case2-data}
-lfs_samp_area$w_area <- 1 / base::mean(lfs_samp_area$pik_area)
+lfs_samp_area$w_area <- base::mean(1 / lfs_samp_area$pik_area)
 
 lfs_samp_dwel <- lfs_samp_dwel %>%
   left_join(lfs_samp_area %>% select(id_area, w_area), by = "id_area")
@@ -220,7 +228,10 @@ var_srs_two <- function(y, smp_area, smp_dwel) {
   y_area <- sum_by(y, by = smp_dwel$id_area, w = 1 / smp_dwel$pik_dwel)
 
   # Stage 1: SRS variance on the estimated area totals
-  variance[["srs-area"]] <- var_srs(y_area, pik = 1 / smp_area$w_area)
+  variance[["srs-area"]] <- var_srs(
+    y_area[smp_area$id_area, , drop = FALSE], 
+    pik = 1 / smp_area$w_area
+  )
 
   print(as.data.frame(variance))
   Reduce(`+`, variance)
@@ -287,6 +298,7 @@ qvar3 <- qvar_ms(
   sampling_weight = c("w_area", "w_dwel"),
   # Single names: assigned to the last stage by default
   nrc_weight = "w_nrc",
+  # response_prob = "prep", # instead of nrc_weight
   response_dummy = "rep",
   define = TRUE
 )
@@ -326,7 +338,10 @@ var_srs_two <- function(y, smp_area, smp_dwel) {
 
   y_area <- sum_by(y / smp_dwel$prep, by = smp_dwel$id_area, w = smp_dwel$w_dwel)
 
-  variance[["srs-area"]] <- var_srs(y_area, pik = 1 / smp_area$w_area)
+  variance[["srs-area"]] <- var_srs(
+    y_area[smp_area$id_area, , drop = FALSE], 
+    pik = 1 / smp_area$w_area
+  )
 
   print(as.data.frame(variance))
   Reduce(`+`, variance)
@@ -350,13 +365,17 @@ alike (the latter with zeros): this is why each stage file must contain all
 sampled units. Second, `add_zero()` occurs at the top of each stage block
 inside `qvar_ms()`: it does not include non-respondents in the calibration
 or non-response steps (those explicitly select their rows), it only
-guarantees their presence — with a zero — at the sampling variance step.
+guarantees their presence — with a zero — at the sampling variance step. 
+Zeroed non-respondents are not a computational trick but the exact HT 
+computation — see the appendix.
 
 ## Case 4: stratified first stage with a single-unit stratum
 
 We now stratify the first stage, deliberately putting a single area in
 stratum A. Like `qvar()`, `qvar_ms()` warns, excludes such strata from the
-variance estimation and keeps them for point estimates.
+variance estimation and keeps them for point estimates. It is also possible 
+to estimate variance of single-unit stratum with a Poisson variance term, 
+with the argument `single_unit_strata = "poisson"`.
 
 ```{r case4-data}
 lfs_samp_area$strata <- ifelse(lfs_samp_area$id_area == "A016", "A", "B")
@@ -432,6 +451,7 @@ qvar4b <- define_variance_wrapper(
 )
 
 qvar4(lfs_samp_dwel, total(income))
+qvar4(lfs_samp_dwel, total(income), single_unit_strata = "poisson")
 qvar4b(lfs_samp_dwel, total(income))
 ```
 
@@ -445,7 +465,7 @@ explicit by passing `strata = sub$strata_dwel` inside each per-area call.
 
 ```{r case5-data}
 lfs_samp_area$strata_area <- ifelse(lfs_samp_area$id_area == "A016", "A", "B")
-lfs_samp_dwel$strata_dwel <- ifelse(lfs_samp_dwel$income < 10, "Q1", "Q2")
+lfs_samp_dwel$strata_dwel <- paste0("S",as.numeric(as.factor(lfs_samp_dwel$id_dwel)) %% 3)
 ```
 
 ```{r case5}
@@ -519,8 +539,7 @@ qvar5b(lfs_samp_dwel, total(income))
 
 Note that with strata crossed with parent units, single-unit *crossed*
 strata (an area containing a single sampled dwelling in a given stratum)
-are excluded with a warning, just as at stage 1. This is expected and
-frequent in household surveys.
+are excluded by default with a warning, just as at stage 1.
 
 ## Case 6: calibration at the last stage
 
@@ -533,9 +552,7 @@ matter here:
   — the weight actually used in the calibration equations (here `w_final`);
 * qualitative calibration variables (character or factor) are automatically
   discretized into full sets of dummies. The hand-built version uses
-  `model.matrix()` (intercept + treatment contrasts) instead: the two
-  parameterizations span the same column space, hence yield the same
-  residuals and the same variance.
+  `model.matrix()` (intercept + treatment contrasts) instead.
 
 ```{r case6}
 qvar6 <- qvar_ms(
@@ -1085,12 +1102,10 @@ the width correction a Student-based interval would apply:
   Large-sample normal intervals are adequate.
 ```
 
-versus, on a design with few primary units:
+versus, in our sample, we only have 4 PSU and no first-stage strata:
 
-```
--- Degrees of freedom --
-  df = 18 PSUs - 6 strata = 12
-  Normal-based CIs are optimistic: a t-based CI would be 11.1 % wider.
+```{r diag-dof}
+qvar6(lfs_samp_dwel, total(income), diagnostics = "dof")
 ```
 
 **Warning signs.**
@@ -1140,8 +1155,8 @@ when observations falls below 50:
 
 ```{r diag-domains}
 qvar6(lfs_samp_dwel,
-  "Income, stratum Q1" = total(income, where = strata_dwel == "Q1"),
-  "Income, stratum Q2" = total(income, where = strata_dwel == "Q2"),
+  "Income, stratum S1" = total(income, where = strata_dwel == "S1"),
+  "Income, stratum S2" = total(income, where = strata_dwel == "S2"),
   diagnostics = "domains"
 )
 ```
@@ -1166,18 +1181,6 @@ qvar6(lfs_samp_dwel,
 | large `deff_weights` | extreme weights | inspect `"nr"` minimum probabilities; trim or collapse cells |
 | df < 30 | few PSUs | report t-based intervals; consider replication cross-check |
 | small-domain flag | thin domain | precision thresholds; small area estimation |
-
-## What these diagnostics are not
-
-All the quantities above are by-products of the analytical (Taylor/Rao)
-decomposition: they share its assumptions — invariance and independence
-across stages, Poisson non-response within cells, first-order linearization
-of calibration — and cannot validate those assumptions from within. The
-standard external check is to re-estimate a few key variances with a
-replication method (jackknife or bootstrap): agreement between
-the analytical and replicated variances is the strongest available evidence
-that the design description encoded in the wrapper is faithful. This is a
-natural extension for a future version.
 
 # Inspecting a variance wrapper
 
@@ -1360,7 +1363,8 @@ underlying Rao (1975) decomposition explicit — the same estimator as the
 SAS Poulpe macros, which remain the external reference throughout.
 
 Along the way, the wrapper grew from a computing object into a
-methodological one. The `diagnostics` technical parameter allows a quality control of the variance estimation procedure — variance components with 
+methodological one. The `diagnostics` technical parameter allows a 
+quality control of the variance estimation procedure — variance components with 
 the exact effect of calibration, design effect and its Kish decomposition, 
 degrees of freedom, non-response and domain diagnostics — while 
 `qvar_notes()` and `inspect_wrapper()` make the wrapper itself readable: 
@@ -1399,11 +1403,110 @@ estimates would then flow directly into graphs and tables, instead of
 living in a separate results file. This design-object layer is under
 construction and beyond the scope of this vignette.
 
+# Annexe
+
+
+## One responding unit: the Poisson term as the natural continuation of the SRS formula
+
+Two situations must be distinguished in a stratum. When it contains a
+single *sampled* unit, the SRS variance formula is undefined (the $s^2$
+term divides by $n - 1 = 0$): this is the case handled by the
+`single_unit_strata` treatment. When it contains several sampled units of
+which a single one *responds*, the SRS formula remains perfectly defined,
+provided the non-responding units are kept in the computation with a zero
+value — which is exactly what the `add_zero()` mechanism of `gustave` does.
+This appendix shows that, in the latter case, the SRS formula over all $n$
+sampled units is **algebraically identical** to the Poisson variance term
+of the lone respondent. This identity both explains why strata with a
+single respondent require no special treatment, and motivates the Poisson
+fallback as the natural continuation of the SRS formula when even the
+zeros disappear. Notations follow Chauvet's lecture notes on variance
+estimation (Ensai):
+<https://ensai.fr/wp-content/uploads/2019/06/TechEchMaster_EstVariance_v1.pdf>
+
+### From the Horvitz-Thompson variance estimator
+
+Under an arbitrary design, the total is estimated by
+$$
+\hat t_{y\pi} = \sum_{k \in S} \frac{y_k}{\pi_k},
+$$
+and its variance is estimated (without bias, provided all joint inclusion
+probabilities are positive) by
+$$
+\hat v_{HT}(\hat t_{y\pi}) = \sum_{k,l \in S}
+\frac{y_k}{\pi_k} \frac{y_l}{\pi_l}
+\frac{\pi_{kl} - \pi_k \pi_l}{\pi_{kl}}.
+$$
+Suppose a single unit $k$ of the sample carries a non-zero value — say,
+one respondent with $y_k = 10$ among four units sampled with
+$\pi = 0.25$, the three non-respondents entering with $y = 0$. Every term
+of the double sum contains a product $y_k y_l$ and therefore vanishes,
+except the diagonal term $k = l$. With the convention
+$\pi_{kk} = \pi_k$, the estimator collapses to
+$$
+\hat v_{HT}(\hat t_{y\pi})
+= \left(\frac{y_k}{\pi_k}\right)^2 \frac{\pi_k - \pi_k^2}{\pi_k}
+= \left(\frac{y_k}{\pi_k}\right)^2 (1 - \pi_k),
+$$
+which is precisely the contribution of unit $k$ under a Poisson design —
+the term computed by `var_pois()`.
+
+### From the SRS formula with zeroed non-respondents
+
+Under simple random sampling (equal inclusion probabilities
+$\pi_k = n/N$), the total is estimated by $\hat t_{y\pi} = N \bar y$ with
+$\bar y = \frac{1}{n} \sum_{k \in S} y_k$, and its variance by the
+classical formula
+$$
+\hat v(\hat t_{y\pi}) = N^2 \, \frac{1-f}{n} \, s^2_y,
+\qquad
+s^2_y = \frac{1}{n-1} \sum_{k \in S} (y_k - \bar y)^2,
+\qquad f = \frac{n}{N}.
+$$
+With a single non-zero unit $k$, the sum of squares splits into the
+contribution of the respondent and that of the $n - 1$ zero-valued units,
+each equal to $\bar y^2$:
+$$
+s^2_y = \frac{1}{n-1} \left( (y_k - \bar y)^2 + (n-1)\,\bar y^2 \right)
+      = \frac{1}{n-1} \left( y_k^2 - 2 y_k \bar y + n \bar y^2 \right).
+$$
+Since $\bar y = y_k / n$,
+$$
+s^2_y = \frac{1}{n-1}
+\left( y_k^2 - \frac{2 y_k^2}{n} + \frac{y_k^2}{n} \right)
+= \frac{y_k^2}{n-1} \cdot \frac{n-1}{n}
+= \frac{y_k^2}{n}.
+$$
+Injecting into the full formula, with $f = \pi_k = n/N$:
+$$
+\hat v(\hat t_{y\pi})
+= N^2 \, \frac{1 - f}{n} \, \frac{y_k^2}{n}
+= \left(1 - \pi_k\right) \frac{N^2 y_k^2}{n^2}
+= \left(\frac{y_k}{\pi_k}\right)^2 (1 - \pi_k)
+= \hat v_{HT}(\hat t_{y\pi}).
+$$
+
+### How to use it in `qvar_ms()` ?
+
+The two computations are rigorously identical: since
+the Deville-Tillé formula implemented by `varDT()` reduces exactly to the
+classical SRS estimator under equal inclusion probabilities, the identity
+holds for the actual `gustave` computation. 
+Two consequences for `qvar_ms()`. First, strata
+with a single *respondent* among several sampled units require no special
+treatment: the SRS formula with zeroed non-respondents already computes
+the right quantity. Second, when the stratum contains a single *sampled*
+unit, $s^2_y$ is undefined but the diagonal Horvitz-Thompson term
+$(1-\pi_k)(y_k/\pi_k)^2$ remains available: this is the term added by
+`single_unit_strata = "poisson"`.
+
 # References
 
 * Caron N. (1998), "Le logiciel Poulpe : aspects méthodologiques",
   *Actes des Journées de méthodologie statistique*,
   <http://jms-insee.fr/jms1998s03_1/>
+* Chauvet G., Estimation de variance, *Ensai*,
+  <https://ensai.fr/wp-content/uploads/2019/06/TechEchMaster_EstVariance_v1.pdf>
 * Kish L. (1965), *Survey Sampling*, Wiley.
 * Kish L. (1992), "Weighting for unequal P_i", *Journal of Official
   Statistics*, 8(2), 183–200.

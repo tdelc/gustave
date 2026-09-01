@@ -1102,6 +1102,7 @@ qvar_ms_variance_function <- function(y, stages, calib,
   }
   
   if (show("dof")){
+    stages <<- stages
     n_psu    <- sum(!stages[[1]]$samp$exclude)
     n_strata <- tryCatch(NROW(stages[[1]]$samp$precalc$A), error = function(e) 1L)
     dof <- n_psu - n_strata

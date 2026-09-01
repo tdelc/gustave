@@ -12,7 +12,7 @@
 
 <meta name="author" content="Thomas Delclite" />
 
-<meta name="date" content="2026-07-13" />
+<meta name="date" content="2026-07-24" />
 
 <title>Multistage variance estimation with qvar_ms</title>
 
@@ -342,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">Multistage variance estimation with
 qvar_ms</h1>
 <h4 class="author">Thomas Delclite</h4>
-<h4 class="date">2026-07-13</h4>
+<h4 class="date">2026-07-24</h4>
 
 
 <div id="TOC">
@@ -385,8 +385,6 @@ effect (<code>&quot;deff&quot;</code>)</a></li>
 (<code>&quot;domains&quot;</code>)</a></li>
 <li><a href="#a-reading-grid" id="toc-a-reading-grid">A reading
 grid</a></li>
-<li><a href="#what-these-diagnostics-are-not" id="toc-what-these-diagnostics-are-not">What these diagnostics are
-not</a></li>
 </ul></li>
 <li><a href="#inspecting-a-variance-wrapper" id="toc-inspecting-a-variance-wrapper">Inspecting a variance wrapper</a>
 <ul>
@@ -399,6 +397,12 @@ cards</a></li>
 parameters and raw technical data</a></li>
 </ul></li>
 <li><a href="#conclusion" id="toc-conclusion">Conclusion</a></li>
+<li><a href="#annexe" id="toc-annexe">Annexe</a>
+<ul>
+<li><a href="#one-responding-unit-the-poisson-term-as-the-natural-continuation-of-the-srs-formula" id="toc-one-responding-unit-the-poisson-term-as-the-natural-continuation-of-the-srs-formula">One
+responding unit: the Poisson term as the natural continuation of the SRS
+formula</a></li>
+</ul></li>
 <li><a href="#references" id="toc-references">References</a></li>
 </ul>
 </div>
@@ -453,6 +457,12 @@ first, then a hand-built equivalent using
 functions, which makes every methodological step explicit and serves as
 ground truth. Readers in a hurry can jump to the case matching their
 design and work backwards.</p>
+<p><code>qvar_ms()</code> uses <code>varDT()</code> to estimate the
+variance of the estimator of a total in the case of a balanced sampling
+design with equal or unequal probabilities using Deville-Tillé (2005)
+formula. All examples use the function <code>var_srs()</code>, which is
+a convenience wrapper for the (stratified) simple random sampling
+case.</p>
 <div id="conventions" class="section level2">
 <h2>Conventions</h2>
 <p>Before anything else, the conventions used by <code>qvar_ms()</code>
@@ -472,8 +482,11 @@ variable of the previous stage is assumed to be present).</li>
 <li><strong>Conditional weights.</strong> <code>sampling_weight</code>
 and <code>nrc_weight</code> are <strong>conditional</strong> weights at
 the considered stage: the inverse of the inclusion (resp. response)
-probability <em>given the stages above</em> (Poulpe convention). This is
-the single most important convention of the interface.</li>
+probability <em>given the stages above</em>. This is the single most
+important convention of the interface.</li>
+<li><strong>Response probability.</strong> <code>response_prob</code>
+can be used instead of <code>nrc_weight</code> to include response
+probability at each stage of non-response.</li>
 <li><strong>Cumulated calibration weight.</strong>
 <code>calibration_weight</code> is the <strong>cumulated</strong> weight
 at the calibration stage — the weight actually used in the calibration
@@ -530,7 +543,7 @@ stage. Calibration is declared at one single stage
 </tr>
 <tr class="odd">
 <td><code>nrc_weight</code>, <code>response_dummy</code>,
-<code>nrc_dummy</code></td>
+<code>response_dummy</code>, <code>nrc_dummy</code></td>
 <td>yes (list)</td>
 <td>conditional</td>
 <td>last stage</td>
@@ -614,7 +627,7 @@ random sampling formula within strata and would otherwise warn and use
 the mean weight per stratum. The final dwelling weight is rebuilt as the
 product of the <strong>conditional</strong> weights of the two
 stages.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>lfs_samp_area<span class="sc">$</span>w_area <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> base<span class="sc">::</span><span class="fu">mean</span>(lfs_samp_area<span class="sc">$</span>pik_area)</span>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>lfs_samp_area<span class="sc">$</span>w_area <span class="ot">&lt;-</span> base<span class="sc">::</span><span class="fu">mean</span>(<span class="dv">1</span> <span class="sc">/</span> lfs_samp_area<span class="sc">$</span>pik_area)</span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>lfs_samp_dwel <span class="ot">&lt;-</span> lfs_samp_dwel <span class="sc">%&gt;%</span></span>
 <span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="fu">left_join</span>(lfs_samp_area <span class="sc">%&gt;%</span> <span class="fu">select</span>(id_area, w_area), <span class="at">by =</span> <span class="st">&quot;id_area&quot;</span>)</span>
@@ -669,28 +682,31 @@ estimator implemented by the SAS <code>Poulpe</code> macros (Caron,
 <span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a>  y_area <span class="ot">&lt;-</span> <span class="fu">sum_by</span>(y, <span class="at">by =</span> smp_dwel<span class="sc">$</span>id_area, <span class="at">w =</span> <span class="dv">1</span> <span class="sc">/</span> smp_dwel<span class="sc">$</span>pik_dwel)</span>
 <span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a></span>
 <span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a>  <span class="co"># Stage 1: SRS variance on the estimated area totals</span></span>
-<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a>  variance[[<span class="st">&quot;srs-area&quot;</span>]] <span class="ot">&lt;-</span> <span class="fu">var_srs</span>(y_area, <span class="at">pik =</span> <span class="dv">1</span> <span class="sc">/</span> smp_area<span class="sc">$</span>w_area)</span>
-<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a></span>
-<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a>  <span class="fu">print</span>(<span class="fu">as.data.frame</span>(variance))</span>
-<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a>  <span class="fu">Reduce</span>(<span class="st">`</span><span class="at">+</span><span class="st">`</span>, variance)</span>
-<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a>}</span>
-<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a></span>
-<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a>qvar2b <span class="ot">&lt;-</span> <span class="fu">define_variance_wrapper</span>(</span>
-<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a>  <span class="at">variance_function =</span> var_srs_two,</span>
-<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a>  <span class="at">technical_data    =</span> <span class="fu">list</span>(<span class="at">smp_area =</span> lfs_samp_area, <span class="at">smp_dwel =</span> lfs_samp_dwel),</span>
-<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a>  <span class="at">reference_id      =</span> lfs_samp_dwel<span class="sc">$</span>id_dwel,</span>
-<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a>  <span class="at">reference_weight  =</span> lfs_samp_dwel<span class="sc">$</span>w_final,</span>
-<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a>  <span class="at">default_id        =</span> <span class="st">&quot;id_dwel&quot;</span></span>
-<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a>)</span>
-<span id="cb6-33"><a href="#cb6-33" tabindex="-1"></a></span>
-<span id="cb6-34"><a href="#cb6-34" tabindex="-1"></a><span class="fu">qvar2</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
-<span id="cb6-35"><a href="#cb6-35" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std      cv    lower    upper</span></span>
-<span id="cb6-36"><a href="#cb6-36" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 198341.1 523041985 22870.11 11.5307 153516.5 243165.6</span></span>
-<span id="cb6-37"><a href="#cb6-37" tabindex="-1"></a><span class="fu">qvar2b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
-<span id="cb6-38"><a href="#cb6-38" tabindex="-1"></a><span class="co">#&gt;   srs.dwel  srs.area</span></span>
-<span id="cb6-39"><a href="#cb6-39" tabindex="-1"></a><span class="co">#&gt; 1  5096166 517945819</span></span>
-<span id="cb6-40"><a href="#cb6-40" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std      cv    lower    upper</span></span>
-<span id="cb6-41"><a href="#cb6-41" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 198341.1 523041985 22870.11 11.5307 153516.5 243165.6</span></span></code></pre></div>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a>  variance[[<span class="st">&quot;srs-area&quot;</span>]] <span class="ot">&lt;-</span> <span class="fu">var_srs</span>(</span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a>    y_area[smp_area<span class="sc">$</span>id_area, , <span class="at">drop =</span> <span class="cn">FALSE</span>], </span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a>    <span class="at">pik =</span> <span class="dv">1</span> <span class="sc">/</span> smp_area<span class="sc">$</span>w_area</span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a>  )</span>
+<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a></span>
+<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a>  <span class="fu">print</span>(<span class="fu">as.data.frame</span>(variance))</span>
+<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a>  <span class="fu">Reduce</span>(<span class="st">`</span><span class="at">+</span><span class="st">`</span>, variance)</span>
+<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a>}</span>
+<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a></span>
+<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a>qvar2b <span class="ot">&lt;-</span> <span class="fu">define_variance_wrapper</span>(</span>
+<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a>  <span class="at">variance_function =</span> var_srs_two,</span>
+<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a>  <span class="at">technical_data    =</span> <span class="fu">list</span>(<span class="at">smp_area =</span> lfs_samp_area, <span class="at">smp_dwel =</span> lfs_samp_dwel),</span>
+<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a>  <span class="at">reference_id      =</span> lfs_samp_dwel<span class="sc">$</span>id_dwel,</span>
+<span id="cb6-33"><a href="#cb6-33" tabindex="-1"></a>  <span class="at">reference_weight  =</span> lfs_samp_dwel<span class="sc">$</span>w_final,</span>
+<span id="cb6-34"><a href="#cb6-34" tabindex="-1"></a>  <span class="at">default_id        =</span> <span class="st">&quot;id_dwel&quot;</span></span>
+<span id="cb6-35"><a href="#cb6-35" tabindex="-1"></a>)</span>
+<span id="cb6-36"><a href="#cb6-36" tabindex="-1"></a></span>
+<span id="cb6-37"><a href="#cb6-37" tabindex="-1"></a><span class="fu">qvar2</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
+<span id="cb6-38"><a href="#cb6-38" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std      cv    lower    upper</span></span>
+<span id="cb6-39"><a href="#cb6-39" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 198343.6 523055781 22870.41 11.5307 153518.4 243168.8</span></span>
+<span id="cb6-40"><a href="#cb6-40" tabindex="-1"></a><span class="fu">qvar2b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
+<span id="cb6-41"><a href="#cb6-41" tabindex="-1"></a><span class="co">#&gt;   srs.dwel  srs.area</span></span>
+<span id="cb6-42"><a href="#cb6-42" tabindex="-1"></a><span class="co">#&gt; 1  5096232 517959549</span></span>
+<span id="cb6-43"><a href="#cb6-43" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std      cv    lower    upper</span></span>
+<span id="cb6-44"><a href="#cb6-44" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 198343.6 523055781 22870.41 11.5307 153518.4 243168.8</span></span></code></pre></div>
 <p>Note how <code>qvar_ms()</code> achieves the per-area computation: at
 stage 2, the effective strata are the crossing of the parent unit and of
 the declared strata variable (here, none), so that one single stratified
@@ -705,10 +721,10 @@ diagnostic (see diagnostic section below):</p>
 <span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="co">#&gt; -- Variance components --</span></span>
 <span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt;   sampling_stage2     5.096e+06    1.0 %  </span></span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt;   sampling_stage1     5.179e+08   99.0 %  ####################</span></span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt;   TOTAL                5.23e+08</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt;   sampling_stage1      5.18e+08   99.0 %  ####################</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt;   TOTAL               5.231e+08</span></span>
 <span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std      cv    lower    upper</span></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 198341.1 523041985 22870.11 11.5307 153516.5 243165.6</span></span></code></pre></div>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 198343.6 523055781 22870.41 11.5307 153518.4 243168.8</span></span></code></pre></div>
 </div>
 <div id="case-3-non-response-correction-at-the-last-stage" class="section level2">
 <h2>Case 3: non-response correction at the last stage</h2>
@@ -743,19 +759,20 @@ not both.</p>
 <span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  <span class="at">sampling_weight =</span> <span class="fu">c</span>(<span class="st">&quot;w_area&quot;</span>, <span class="st">&quot;w_dwel&quot;</span>),</span>
 <span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>  <span class="co"># Single names: assigned to the last stage by default</span></span>
 <span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>  <span class="at">nrc_weight =</span> <span class="st">&quot;w_nrc&quot;</span>,</span>
-<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>  <span class="at">response_dummy =</span> <span class="st">&quot;rep&quot;</span>,</span>
-<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>  <span class="at">define =</span> <span class="cn">TRUE</span></span>
-<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a>)</span>
-<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt; Note: The nrc_weight argument is of length 1: it is assumed to refer to the last sampling stage (stage 2).</span></span>
-<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt; Note: The response_dummy argument is of length 1: it is assumed to refer to the last sampling stage (stage 2).</span></span>
-<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co">#&gt; Survey variance estimation with the gustave package</span></span>
-<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a><span class="co">#&gt; The following features are taken into account:</span></span>
-<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="co">#&gt;   - 2-stage sampling design</span></span>
-<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a><span class="co">#&gt;   - stage 1: simple random sampling WITHOUT stratification</span></span>
-<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="co">#&gt;   - stage 2: simple random sampling WITHOUT stratification (within the units of the stage above), with non-response correction through reweighting</span></span>
-<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co">#&gt; Note: At stage 2, units are drawn within the units of the stage above: the effective strata used for variance estimation are the crossing of the parent unit (id_area).</span></span>
-<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="co">#&gt; Note: As define = TRUE, a ready-to-use variance wrapper is (invisibly) returned.</span></span></code></pre></div>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>  <span class="co"># response_prob = &quot;prep&quot;, # instead of nrc_weight</span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a>  <span class="at">response_dummy =</span> <span class="st">&quot;rep&quot;</span>,</span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a>  <span class="at">define =</span> <span class="cn">TRUE</span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a>)</span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt; Note: The nrc_weight argument is of length 1: it is assumed to refer to the last sampling stage (stage 2).</span></span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co">#&gt; Note: The response_dummy argument is of length 1: it is assumed to refer to the last sampling stage (stage 2).</span></span>
+<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a><span class="co">#&gt; Survey variance estimation with the gustave package</span></span>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="co">#&gt; The following features are taken into account:</span></span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a><span class="co">#&gt;   - 2-stage sampling design</span></span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="co">#&gt;   - stage 1: simple random sampling WITHOUT stratification</span></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co">#&gt;   - stage 2: simple random sampling WITHOUT stratification (within the units of the stage above), with non-response correction through reweighting</span></span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="co">#&gt; Note: At stage 2, units are drawn within the units of the stage above: the effective strata used for variance estimation are the crossing of the parent unit (id_area).</span></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="co">#&gt; Note: As define = TRUE, a ready-to-use variance wrapper is (invisibly) returned.</span></span></code></pre></div>
 <p>In the hand-built version, the non-response variance is a Poisson
 term whose Rao row weight is the cumulated design weight down to the
 current stage (<code>w_dwel * w_area</code>), and the interest variable
@@ -788,29 +805,32 @@ is expanded by the inverse response probability before moving up:</p>
 <span id="cb10-26"><a href="#cb10-26" tabindex="-1"></a></span>
 <span id="cb10-27"><a href="#cb10-27" tabindex="-1"></a>  y_area <span class="ot">&lt;-</span> <span class="fu">sum_by</span>(y <span class="sc">/</span> smp_dwel<span class="sc">$</span>prep, <span class="at">by =</span> smp_dwel<span class="sc">$</span>id_area, <span class="at">w =</span> smp_dwel<span class="sc">$</span>w_dwel)</span>
 <span id="cb10-28"><a href="#cb10-28" tabindex="-1"></a></span>
-<span id="cb10-29"><a href="#cb10-29" tabindex="-1"></a>  variance[[<span class="st">&quot;srs-area&quot;</span>]] <span class="ot">&lt;-</span> <span class="fu">var_srs</span>(y_area, <span class="at">pik =</span> <span class="dv">1</span> <span class="sc">/</span> smp_area<span class="sc">$</span>w_area)</span>
-<span id="cb10-30"><a href="#cb10-30" tabindex="-1"></a></span>
-<span id="cb10-31"><a href="#cb10-31" tabindex="-1"></a>  <span class="fu">print</span>(<span class="fu">as.data.frame</span>(variance))</span>
-<span id="cb10-32"><a href="#cb10-32" tabindex="-1"></a>  <span class="fu">Reduce</span>(<span class="st">`</span><span class="at">+</span><span class="st">`</span>, variance)</span>
-<span id="cb10-33"><a href="#cb10-33" tabindex="-1"></a>}</span>
-<span id="cb10-34"><a href="#cb10-34" tabindex="-1"></a></span>
-<span id="cb10-35"><a href="#cb10-35" tabindex="-1"></a>qvar3b <span class="ot">&lt;-</span> <span class="fu">define_variance_wrapper</span>(</span>
-<span id="cb10-36"><a href="#cb10-36" tabindex="-1"></a>  <span class="at">variance_function =</span> var_srs_two,</span>
-<span id="cb10-37"><a href="#cb10-37" tabindex="-1"></a>  <span class="at">technical_data    =</span> <span class="fu">list</span>(<span class="at">smp_area =</span> lfs_samp_area, <span class="at">smp_dwel =</span> lfs_samp_dwel),</span>
-<span id="cb10-38"><a href="#cb10-38" tabindex="-1"></a>  <span class="at">reference_id      =</span> lfs_samp_dwel<span class="sc">$</span>id_dwel,</span>
-<span id="cb10-39"><a href="#cb10-39" tabindex="-1"></a>  <span class="at">reference_weight  =</span> lfs_samp_dwel<span class="sc">$</span>w_final,</span>
-<span id="cb10-40"><a href="#cb10-40" tabindex="-1"></a>  <span class="at">default_id        =</span> <span class="st">&quot;id_dwel&quot;</span></span>
-<span id="cb10-41"><a href="#cb10-41" tabindex="-1"></a>)</span>
-<span id="cb10-42"><a href="#cb10-42" tabindex="-1"></a></span>
-<span id="cb10-43"><a href="#cb10-43" tabindex="-1"></a><span class="fu">qvar3</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
-<span id="cb10-44"><a href="#cb10-44" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
-<span id="cb10-45"><a href="#cb10-45" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance   std       cv    lower    upper</span></span>
-<span id="cb10-46"><a href="#cb10-46" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190446.7 352275546 18769 9.855254 153660.1 227233.3</span></span>
-<span id="cb10-47"><a href="#cb10-47" tabindex="-1"></a><span class="fu">qvar3b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
-<span id="cb10-48"><a href="#cb10-48" tabindex="-1"></a><span class="co">#&gt;        nr srs.dwel  srs.area</span></span>
-<span id="cb10-49"><a href="#cb10-49" tabindex="-1"></a><span class="co">#&gt; 1 3213213 22003516 327058817</span></span>
-<span id="cb10-50"><a href="#cb10-50" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance   std       cv    lower    upper</span></span>
-<span id="cb10-51"><a href="#cb10-51" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190446.7 352275546 18769 9.855254 153660.1 227233.3</span></span></code></pre></div>
+<span id="cb10-29"><a href="#cb10-29" tabindex="-1"></a>  variance[[<span class="st">&quot;srs-area&quot;</span>]] <span class="ot">&lt;-</span> <span class="fu">var_srs</span>(</span>
+<span id="cb10-30"><a href="#cb10-30" tabindex="-1"></a>    y_area[smp_area<span class="sc">$</span>id_area, , <span class="at">drop =</span> <span class="cn">FALSE</span>], </span>
+<span id="cb10-31"><a href="#cb10-31" tabindex="-1"></a>    <span class="at">pik =</span> <span class="dv">1</span> <span class="sc">/</span> smp_area<span class="sc">$</span>w_area</span>
+<span id="cb10-32"><a href="#cb10-32" tabindex="-1"></a>  )</span>
+<span id="cb10-33"><a href="#cb10-33" tabindex="-1"></a></span>
+<span id="cb10-34"><a href="#cb10-34" tabindex="-1"></a>  <span class="fu">print</span>(<span class="fu">as.data.frame</span>(variance))</span>
+<span id="cb10-35"><a href="#cb10-35" tabindex="-1"></a>  <span class="fu">Reduce</span>(<span class="st">`</span><span class="at">+</span><span class="st">`</span>, variance)</span>
+<span id="cb10-36"><a href="#cb10-36" tabindex="-1"></a>}</span>
+<span id="cb10-37"><a href="#cb10-37" tabindex="-1"></a></span>
+<span id="cb10-38"><a href="#cb10-38" tabindex="-1"></a>qvar3b <span class="ot">&lt;-</span> <span class="fu">define_variance_wrapper</span>(</span>
+<span id="cb10-39"><a href="#cb10-39" tabindex="-1"></a>  <span class="at">variance_function =</span> var_srs_two,</span>
+<span id="cb10-40"><a href="#cb10-40" tabindex="-1"></a>  <span class="at">technical_data    =</span> <span class="fu">list</span>(<span class="at">smp_area =</span> lfs_samp_area, <span class="at">smp_dwel =</span> lfs_samp_dwel),</span>
+<span id="cb10-41"><a href="#cb10-41" tabindex="-1"></a>  <span class="at">reference_id      =</span> lfs_samp_dwel<span class="sc">$</span>id_dwel,</span>
+<span id="cb10-42"><a href="#cb10-42" tabindex="-1"></a>  <span class="at">reference_weight  =</span> lfs_samp_dwel<span class="sc">$</span>w_final,</span>
+<span id="cb10-43"><a href="#cb10-43" tabindex="-1"></a>  <span class="at">default_id        =</span> <span class="st">&quot;id_dwel&quot;</span></span>
+<span id="cb10-44"><a href="#cb10-44" tabindex="-1"></a>)</span>
+<span id="cb10-45"><a href="#cb10-45" tabindex="-1"></a></span>
+<span id="cb10-46"><a href="#cb10-46" tabindex="-1"></a><span class="fu">qvar3</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
+<span id="cb10-47"><a href="#cb10-47" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
+<span id="cb10-48"><a href="#cb10-48" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb10-49"><a href="#cb10-49" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 352284542 18769.24 9.855252 153662.1 227236.2</span></span>
+<span id="cb10-50"><a href="#cb10-50" tabindex="-1"></a><span class="fu">qvar3b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
+<span id="cb10-51"><a href="#cb10-51" tabindex="-1"></a><span class="co">#&gt;        nr srs.dwel  srs.area</span></span>
+<span id="cb10-52"><a href="#cb10-52" tabindex="-1"></a><span class="co">#&gt; 1 3213255 22003800 327067487</span></span>
+<span id="cb10-53"><a href="#cb10-53" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb10-54"><a href="#cb10-54" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190449.2 352284542 18769.24 9.855252 153662.1 227236.2</span></span></code></pre></div>
 <p>Two things worth noticing. First, the second-stage sampling variance
 is computed over <strong>all sampled dwellings</strong>, respondents and
 non-respondents alike (the latter with zeros): this is why each stage
@@ -818,14 +838,18 @@ file must contain all sampled units. Second, <code>add_zero()</code>
 occurs at the top of each stage block inside <code>qvar_ms()</code>: it
 does not include non-respondents in the calibration or non-response
 steps (those explicitly select their rows), it only guarantees their
-presence — with a zero — at the sampling variance step.</p>
+presence — with a zero — at the sampling variance step. Zeroed
+non-respondents are not a computational trick but the exact HT
+computation — see the appendix.</p>
 </div>
 <div id="case-4-stratified-first-stage-with-a-single-unit-stratum" class="section level2">
 <h2>Case 4: stratified first stage with a single-unit stratum</h2>
 <p>We now stratify the first stage, deliberately putting a single area
 in stratum A. Like <code>qvar()</code>, <code>qvar_ms()</code> warns,
 excludes such strata from the variance estimation and keeps them for
-point estimates.</p>
+point estimates. It is also possible to estimate variance of single-unit
+stratum with a Poisson variance term, with the argument
+<code>single_unit_strata = &quot;poisson&quot;</code>.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>lfs_samp_area<span class="sc">$</span>strata <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(lfs_samp_area<span class="sc">$</span>id_area <span class="sc">==</span> <span class="st">&quot;A016&quot;</span>, <span class="st">&quot;A&quot;</span>, <span class="st">&quot;B&quot;</span>)</span></code></pre></div>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>qvar4 <span class="ot">&lt;-</span> <span class="fu">qvar_ms</span>(</span>
 <span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="at">data =</span> <span class="fu">list</span>(lfs_samp_area, lfs_samp_dwel),</span>
@@ -905,13 +929,17 @@ stop), reproducing the behaviour of <code>qvar_ms()</code>:</p>
 <span id="cb13-47"><a href="#cb13-47" tabindex="-1"></a></span>
 <span id="cb13-48"><a href="#cb13-48" tabindex="-1"></a><span class="fu">qvar4</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
 <span id="cb13-49"><a href="#cb13-49" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
-<span id="cb13-50"><a href="#cb13-50" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv  lower    upper</span></span>
-<span id="cb13-51"><a href="#cb13-51" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190446.7 128141578 11319.96 5.943901 168260 212633.4</span></span>
-<span id="cb13-52"><a href="#cb13-52" tabindex="-1"></a><span class="fu">qvar4b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
-<span id="cb13-53"><a href="#cb13-53" tabindex="-1"></a><span class="co">#&gt;        nr srs.dwel  srs.area</span></span>
-<span id="cb13-54"><a href="#cb13-54" tabindex="-1"></a><span class="co">#&gt; 1 3213213 22003516 102924849</span></span>
-<span id="cb13-55"><a href="#cb13-55" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv  lower    upper</span></span>
-<span id="cb13-56"><a href="#cb13-56" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190446.7 128141578 11319.96 5.943901 168260 212633.4</span></span></code></pre></div>
+<span id="cb13-50"><a href="#cb13-50" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance     std       cv    lower    upper</span></span>
+<span id="cb13-51"><a href="#cb13-51" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 128144632 11320.1 5.943895 168262.2 212636.1</span></span>
+<span id="cb13-52"><a href="#cb13-52" tabindex="-1"></a><span class="fu">qvar4</span>(lfs_samp_dwel, <span class="fu">total</span>(income), <span class="at">single_unit_strata =</span> <span class="st">&quot;poisson&quot;</span>)</span>
+<span id="cb13-53"><a href="#cb13-53" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
+<span id="cb13-54"><a href="#cb13-54" tabindex="-1"></a><span class="co">#&gt;                call  n      est   variance      std       cv    lower    upper</span></span>
+<span id="cb13-55"><a href="#cb13-55" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 3482048661 59008.89 30.98406 74793.86 306104.4</span></span>
+<span id="cb13-56"><a href="#cb13-56" tabindex="-1"></a><span class="fu">qvar4b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
+<span id="cb13-57"><a href="#cb13-57" tabindex="-1"></a><span class="co">#&gt;        nr srs.dwel  srs.area</span></span>
+<span id="cb13-58"><a href="#cb13-58" tabindex="-1"></a><span class="co">#&gt; 1 3213255 22003800 102927577</span></span>
+<span id="cb13-59"><a href="#cb13-59" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance     std       cv    lower    upper</span></span>
+<span id="cb13-60"><a href="#cb13-60" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190449.2 128144632 11320.1 5.943895 168262.2 212636.1</span></span></code></pre></div>
 </div>
 <div id="case-5-stratification-at-both-stages" class="section level2">
 <h2>Case 5: stratification at both stages</h2>
@@ -923,7 +951,7 @@ at stage 2 means stratified simple random sampling of dwellings
 passing <code>strata = sub$strata_dwel</code> inside each per-area
 call.</p>
 <div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>lfs_samp_area<span class="sc">$</span>strata_area <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(lfs_samp_area<span class="sc">$</span>id_area <span class="sc">==</span> <span class="st">&quot;A016&quot;</span>, <span class="st">&quot;A&quot;</span>, <span class="st">&quot;B&quot;</span>)</span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>lfs_samp_dwel<span class="sc">$</span>strata_dwel <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(lfs_samp_dwel<span class="sc">$</span>income <span class="sc">&lt;</span> <span class="dv">10</span>, <span class="st">&quot;Q1&quot;</span>, <span class="st">&quot;Q2&quot;</span>)</span></code></pre></div>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>lfs_samp_dwel<span class="sc">$</span>strata_dwel <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">&quot;S&quot;</span>,<span class="fu">as.numeric</span>(<span class="fu">as.factor</span>(lfs_samp_dwel<span class="sc">$</span>id_dwel)) <span class="sc">%%</span> <span class="dv">3</span>)</span></code></pre></div>
 <div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>qvar5 <span class="ot">&lt;-</span> <span class="fu">qvar_ms</span>(</span>
 <span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>  <span class="at">data =</span> <span class="fu">list</span>(lfs_samp_area, lfs_samp_dwel),</span>
 <span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a>  <span class="at">sampling_stages =</span> <span class="dv">2</span>,</span>
@@ -1000,17 +1028,17 @@ call.</p>
 <span id="cb16-48"><a href="#cb16-48" tabindex="-1"></a></span>
 <span id="cb16-49"><a href="#cb16-49" tabindex="-1"></a><span class="fu">qvar5</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
 <span id="cb16-50"><a href="#cb16-50" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
-<span id="cb16-51"><a href="#cb16-51" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std     cv    lower    upper</span></span>
-<span id="cb16-52"><a href="#cb16-52" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190446.7 112030719 10584.46 5.5577 169701.5 211191.8</span></span>
+<span id="cb16-51"><a href="#cb16-51" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv  lower    upper</span></span>
+<span id="cb16-52"><a href="#cb16-52" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 128922218 11354.39 5.961902 168195 212703.4</span></span>
 <span id="cb16-53"><a href="#cb16-53" tabindex="-1"></a><span class="fu">qvar5b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
 <span id="cb16-54"><a href="#cb16-54" tabindex="-1"></a><span class="co">#&gt;        nr srs.dwel  srs.area</span></span>
-<span id="cb16-55"><a href="#cb16-55" tabindex="-1"></a><span class="co">#&gt; 1 3213213  5892657 102924849</span></span>
-<span id="cb16-56"><a href="#cb16-56" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std     cv    lower    upper</span></span>
-<span id="cb16-57"><a href="#cb16-57" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190446.7 112030719 10584.46 5.5577 169701.5 211191.8</span></span></code></pre></div>
+<span id="cb16-55"><a href="#cb16-55" tabindex="-1"></a><span class="co">#&gt; 1 3213255 22781386 102927577</span></span>
+<span id="cb16-56"><a href="#cb16-56" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv  lower    upper</span></span>
+<span id="cb16-57"><a href="#cb16-57" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190449.2 128922218 11354.39 5.961902 168195 212703.4</span></span></code></pre></div>
 <p>Note that with strata crossed with parent units, single-unit
 <em>crossed</em> strata (an area containing a single sampled dwelling in
-a given stratum) are excluded with a warning, just as at stage 1. This
-is expected and frequent in household surveys.</p>
+a given stratum) are excluded by default with a warning, just as at
+stage 1.</p>
 </div>
 <div id="case-6-calibration-at-the-last-stage" class="section level2">
 <h2>Case 6: calibration at the last stage</h2>
@@ -1025,8 +1053,7 @@ calibration equations (here <code>w_final</code>);</li>
 <li>qualitative calibration variables (character or factor) are
 automatically discretized into full sets of dummies. The hand-built
 version uses <code>model.matrix()</code> (intercept + treatment
-contrasts) instead: the two parameterizations span the same column
-space, hence yield the same residuals and the same variance.</li>
+contrasts) instead.</li>
 </ul>
 <div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a>qvar6 <span class="ot">&lt;-</span> <span class="fu">qvar_ms</span>(</span>
 <span id="cb17-2"><a href="#cb17-2" tabindex="-1"></a>  <span class="at">data =</span> <span class="fu">list</span>(lfs_samp_area, lfs_samp_dwel),</span>
@@ -1114,13 +1141,13 @@ space, hence yield the same residuals and the same variance.</li>
 <span id="cb18-54"><a href="#cb18-54" tabindex="-1"></a></span>
 <span id="cb18-55"><a href="#cb18-55" tabindex="-1"></a><span class="fu">qvar6</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
 <span id="cb18-56"><a href="#cb18-56" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
-<span id="cb18-57"><a href="#cb18-57" tabindex="-1"></a><span class="co">#&gt;                call  n      est variance      std       cv    lower    upper</span></span>
-<span id="cb18-58"><a href="#cb18-58" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190446.7 66673387 8165.377 4.287487 174442.9 206450.5</span></span>
+<span id="cb18-57"><a href="#cb18-57" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower  upper</span></span>
+<span id="cb18-58"><a href="#cb18-58" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 248325893 15758.36 8.274313 159563.3 221335</span></span>
 <span id="cb18-59"><a href="#cb18-59" tabindex="-1"></a><span class="fu">qvar6b</span>(lfs_samp_dwel, <span class="fu">total</span>(income))</span>
-<span id="cb18-60"><a href="#cb18-60" tabindex="-1"></a><span class="co">#&gt;         nr srs.dwel srs.area</span></span>
-<span id="cb18-61"><a href="#cb18-61" tabindex="-1"></a><span class="co">#&gt; 1 421270.2  5484259 60767857</span></span>
-<span id="cb18-62"><a href="#cb18-62" tabindex="-1"></a><span class="co">#&gt;                call  n      est variance      std       cv    lower    upper</span></span>
-<span id="cb18-63"><a href="#cb18-63" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190446.7 66673387 8165.377 4.287487 174442.9 206450.5</span></span></code></pre></div>
+<span id="cb18-60"><a href="#cb18-60" tabindex="-1"></a><span class="co">#&gt;       nr srs.dwel  srs.area</span></span>
+<span id="cb18-61"><a href="#cb18-61" tabindex="-1"></a><span class="co">#&gt; 1 659221  8082131 239584540</span></span>
+<span id="cb18-62"><a href="#cb18-62" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower  upper</span></span>
+<span id="cb18-63"><a href="#cb18-63" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 80 190449.2 248325893 15758.36 8.274313 159563.3 221335</span></span></code></pre></div>
 <p><code>qvar_ms()</code> also compares, at the calibration stage, the
 calibrated weights with the cumulated weights guessed from the survey
 description: their ratio is the calibration g-weight and should remain
@@ -1149,12 +1176,12 @@ non-responding parent.</p>
 <span id="cb19-8"><a href="#cb19-8" tabindex="-1"></a></span>
 <span id="cb19-9"><a href="#cb19-9" tabindex="-1"></a><span class="fu">head</span>(lfs_samp_ind)</span>
 <span id="cb19-10"><a href="#cb19-10" tabindex="-1"></a><span class="co">#&gt;   id_ind id_dwel    income unemp sampling_weight  rep  pik_dwel w_dwel  w_final</span></span>
-<span id="cb19-11"><a href="#cb19-11" tabindex="-1"></a><span class="co">#&gt; 1 I00128  D05448 10.990279 FALSE        120.2375 TRUE 0.1666667   6.00 199.1511</span></span>
-<span id="cb19-12"><a href="#cb19-12" tabindex="-1"></a><span class="co">#&gt; 2 I00416  D05651  6.844813 FALSE        120.2375 TRUE 0.1652893   6.05 200.8107</span></span>
-<span id="cb19-13"><a href="#cb19-13" tabindex="-1"></a><span class="co">#&gt; 3 I01216  D00784 11.602062  TRUE        120.2375 TRUE 0.1652893   6.05 200.8107</span></span>
-<span id="cb19-14"><a href="#cb19-14" tabindex="-1"></a><span class="co">#&gt; 4 I01374  D00012 10.712888 FALSE        120.2375 TRUE 0.1666667   6.00 199.1511</span></span>
-<span id="cb19-15"><a href="#cb19-15" tabindex="-1"></a><span class="co">#&gt; 5 I01483  D00387  3.485693 FALSE        120.2375 TRUE 0.1652893   6.05 200.8107</span></span>
-<span id="cb19-16"><a href="#cb19-16" tabindex="-1"></a><span class="co">#&gt; 6 I01514  D04784 10.989525 FALSE        120.2375 TRUE 0.1652893   6.05 200.8107</span></span>
+<span id="cb19-11"><a href="#cb19-11" tabindex="-1"></a><span class="co">#&gt; 1 I00128  D05448 10.990279 FALSE        120.2375 TRUE 0.1666667   6.00 199.1537</span></span>
+<span id="cb19-12"><a href="#cb19-12" tabindex="-1"></a><span class="co">#&gt; 2 I00416  D05651  6.844813 FALSE        120.2375 TRUE 0.1652893   6.05 200.8133</span></span>
+<span id="cb19-13"><a href="#cb19-13" tabindex="-1"></a><span class="co">#&gt; 3 I01216  D00784 11.602062  TRUE        120.2375 TRUE 0.1652893   6.05 200.8133</span></span>
+<span id="cb19-14"><a href="#cb19-14" tabindex="-1"></a><span class="co">#&gt; 4 I01374  D00012 10.712888 FALSE        120.2375 TRUE 0.1666667   6.00 199.1537</span></span>
+<span id="cb19-15"><a href="#cb19-15" tabindex="-1"></a><span class="co">#&gt; 5 I01483  D00387  3.485693 FALSE        120.2375 TRUE 0.1652893   6.05 200.8133</span></span>
+<span id="cb19-16"><a href="#cb19-16" tabindex="-1"></a><span class="co">#&gt; 6 I01514  D04784 10.989525 FALSE        120.2375 TRUE 0.1652893   6.05 200.8133</span></span>
 <span id="cb19-17"><a href="#cb19-17" tabindex="-1"></a><span class="co">#&gt;   w_ind pik_ind</span></span>
 <span id="cb19-18"><a href="#cb19-18" tabindex="-1"></a><span class="co">#&gt; 1     1       1</span></span>
 <span id="cb19-19"><a href="#cb19-19" tabindex="-1"></a><span class="co">#&gt; 2     1       1</span></span>
@@ -1237,13 +1264,13 @@ non-responding parent.</p>
 <span id="cb21-49"><a href="#cb21-49" tabindex="-1"></a>)</span>
 <span id="cb21-50"><a href="#cb21-50" tabindex="-1"></a></span>
 <span id="cb21-51"><a href="#cb21-51" tabindex="-1"></a><span class="fu">qvar7</span>(lfs_samp_ind, <span class="fu">total</span>(income))</span>
-<span id="cb21-52"><a href="#cb21-52" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance   std       cv    lower    upper</span></span>
-<span id="cb21-53"><a href="#cb21-53" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 190446.7 352275546 18769 9.855254 153660.1 227233.3</span></span>
+<span id="cb21-52"><a href="#cb21-52" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb21-53"><a href="#cb21-53" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 190449.2 352284542 18769.24 9.855252 153662.1 227236.2</span></span>
 <span id="cb21-54"><a href="#cb21-54" tabindex="-1"></a><span class="fu">qvar7b</span>(lfs_samp_ind, <span class="fu">total</span>(income))</span>
 <span id="cb21-55"><a href="#cb21-55" tabindex="-1"></a><span class="co">#&gt;        nr srs.dwel  srs.area</span></span>
-<span id="cb21-56"><a href="#cb21-56" tabindex="-1"></a><span class="co">#&gt; 1 3213213 22003516 327058817</span></span>
-<span id="cb21-57"><a href="#cb21-57" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance   std       cv    lower    upper</span></span>
-<span id="cb21-58"><a href="#cb21-58" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 190446.7 352275546 18769 9.855254 153660.1 227233.3</span></span></code></pre></div>
+<span id="cb21-56"><a href="#cb21-56" tabindex="-1"></a><span class="co">#&gt; 1 3213255 22003800 327067487</span></span>
+<span id="cb21-57"><a href="#cb21-57" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb21-58"><a href="#cb21-58" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 190449.2 352284542 18769.24 9.855252 153662.1 227236.2</span></span></code></pre></div>
 </div>
 <div id="case-8-non-response-correction-at-two-stages" class="section level2">
 <h2>Case 8: non-response correction at two stages</h2>
@@ -1359,13 +1386,13 @@ own stage (<code>w_nrc</code> in <code>lfs_samp_dwel</code> at stage 2,
 <span id="cb24-59"><a href="#cb24-59" tabindex="-1"></a></span>
 <span id="cb24-60"><a href="#cb24-60" tabindex="-1"></a><span class="fu">qvar8</span>(lfs_samp_ind, <span class="fu">total</span>(income))</span>
 <span id="cb24-61"><a href="#cb24-61" tabindex="-1"></a><span class="co">#&gt; Warning: 15 observations do not match any responding units of the survey. They are discarded.</span></span>
-<span id="cb24-62"><a href="#cb24-62" tabindex="-1"></a><span class="co">#&gt;                call  n    est  variance      std       cv    lower    upper</span></span>
-<span id="cb24-63"><a href="#cb24-63" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 53 194414 793876177 28175.81 14.49268 139190.5 249637.6</span></span>
+<span id="cb24-62"><a href="#cb24-62" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb24-63"><a href="#cb24-63" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 53 194416.5 793896723 28176.17 14.49268 139192.3 249640.8</span></span>
 <span id="cb24-64"><a href="#cb24-64" tabindex="-1"></a><span class="fu">qvar8b</span>(lfs_samp_ind, <span class="fu">total</span>(income))</span>
-<span id="cb24-65"><a href="#cb24-65" tabindex="-1"></a><span class="co">#&gt;     nr.ind      nr srs.dwel  srs.area</span></span>
-<span id="cb24-66"><a href="#cb24-66" tabindex="-1"></a><span class="co">#&gt; 1 977706.4 4066046 31685910 757146515</span></span>
-<span id="cb24-67"><a href="#cb24-67" tabindex="-1"></a><span class="co">#&gt;                call  n    est  variance      std       cv    lower    upper</span></span>
-<span id="cb24-68"><a href="#cb24-68" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 194414 793876177 28175.81 14.49268 139190.5 249637.6</span></span></code></pre></div>
+<span id="cb24-65"><a href="#cb24-65" tabindex="-1"></a><span class="co">#&gt;   nr.ind      nr srs.dwel  srs.area</span></span>
+<span id="cb24-66"><a href="#cb24-66" tabindex="-1"></a><span class="co">#&gt; 1 977719 4066099 31686319 757166586</span></span>
+<span id="cb24-67"><a href="#cb24-67" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb24-68"><a href="#cb24-68" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 194416.5 793896723 28176.17 14.49268 139192.3 249640.8</span></span></code></pre></div>
 <p>The Rao weight of the individual-stage non-response term deserves a
 pause: it is the cumulated weight of everything above and including the
 individual design stage — <code>w_area * w_nrc_dwel * w_ind</code> —
@@ -1478,13 +1505,13 @@ applies at the stage of the units whose weights were calibrated.</p>
 <span id="cb26-65"><a href="#cb26-65" tabindex="-1"></a></span>
 <span id="cb26-66"><a href="#cb26-66" tabindex="-1"></a><span class="fu">qvar9</span>(lfs_samp_ind, <span class="fu">total</span>(income))</span>
 <span id="cb26-67"><a href="#cb26-67" tabindex="-1"></a><span class="co">#&gt; Warning: 15 observations do not match any responding units of the survey. They are discarded.</span></span>
-<span id="cb26-68"><a href="#cb26-68" tabindex="-1"></a><span class="co">#&gt;                call  n    est  variance      std       cv    lower    upper</span></span>
-<span id="cb26-69"><a href="#cb26-69" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 53 194414 121112516 11005.11 5.660658 172844.4 215983.7</span></span>
+<span id="cb26-68"><a href="#cb26-68" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb26-69"><a href="#cb26-69" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 53 194416.5 858017146 29291.93 15.06658 137005.4 251827.7</span></span>
 <span id="cb26-70"><a href="#cb26-70" tabindex="-1"></a><span class="fu">qvar9b</span>(lfs_samp_ind, <span class="fu">total</span>(income))</span>
-<span id="cb26-71"><a href="#cb26-71" tabindex="-1"></a><span class="co">#&gt;     nr.ind      nr srs.dwel  srs.area</span></span>
-<span id="cb26-72"><a href="#cb26-72" tabindex="-1"></a><span class="co">#&gt; 1 977706.4 1089070 14245358 104800382</span></span>
-<span id="cb26-73"><a href="#cb26-73" tabindex="-1"></a><span class="co">#&gt;                call  n    est  variance      std       cv    lower    upper</span></span>
-<span id="cb26-74"><a href="#cb26-74" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 194414 121112516 11005.11 5.660658 172844.4 215983.7</span></span></code></pre></div>
+<span id="cb26-71"><a href="#cb26-71" tabindex="-1"></a><span class="co">#&gt;   nr.ind      nr srs.dwel  srs.area</span></span>
+<span id="cb26-72"><a href="#cb26-72" tabindex="-1"></a><span class="co">#&gt; 1 977719 1380808 16840377 838818242</span></span>
+<span id="cb26-73"><a href="#cb26-73" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb26-74"><a href="#cb26-74" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 68 194416.5 858017146 29291.93 15.06658 137005.4 251827.7</span></span></code></pre></div>
 <p>Note that <code>calibration_weight</code> refers here to a variable
 of the <em>stage 2</em> file (<code>lfs_samp_dwel$w_final</code>): the
 cumulated weight at the calibration stage,
@@ -1538,14 +1565,14 @@ the total:</p>
 <span id="cb28-3"><a href="#cb28-3" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb28-4"><a href="#cb28-4" tabindex="-1"></a><span class="co">#&gt; -- Variance components: calibration effect --</span></span>
 <span id="cb28-5"><a href="#cb28-5" tabindex="-1"></a><span class="co">#&gt;                       with calib.     share                     without     effect</span></span>
-<span id="cb28-6"><a href="#cb28-6" tabindex="-1"></a><span class="co">#&gt;   nr_stage2             4.213e+05    0.6 %                   3.213e+06     -86.9 %</span></span>
-<span id="cb28-7"><a href="#cb28-7" tabindex="-1"></a><span class="co">#&gt;   sampling_stage2       5.484e+06    8.2 %  #                  2.2e+07     -75.1 %</span></span>
-<span id="cb28-8"><a href="#cb28-8" tabindex="-1"></a><span class="co">#&gt;   sampling_stage1       6.077e+07   91.1 %  #########        1.029e+08     -41.0 %</span></span>
-<span id="cb28-9"><a href="#cb28-9" tabindex="-1"></a><span class="co">#&gt;   TOTAL                 6.667e+07  100.0 %  ##########       1.281e+08     -48.0 %</span></span>
+<span id="cb28-6"><a href="#cb28-6" tabindex="-1"></a><span class="co">#&gt;   nr_stage2             6.592e+05    0.3 %                   3.213e+06     -79.5 %</span></span>
+<span id="cb28-7"><a href="#cb28-7" tabindex="-1"></a><span class="co">#&gt;   sampling_stage2       8.082e+06    3.3 %                     2.2e+07     -63.3 %</span></span>
+<span id="cb28-8"><a href="#cb28-8" tabindex="-1"></a><span class="co">#&gt;   sampling_stage1       2.396e+08   96.5 %  ##########       1.029e+08    +132.8 %</span></span>
+<span id="cb28-9"><a href="#cb28-9" tabindex="-1"></a><span class="co">#&gt;   TOTAL                 2.483e+08  100.0 %  ##########       1.281e+08     +93.8 %</span></span>
 <span id="cb28-10"><a href="#cb28-10" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb28-11"><a href="#cb28-11" tabindex="-1"></a><span class="co">#&gt;   Calibration multiplies the variance by 0.520 (deft x 0.721).</span></span>
-<span id="cb28-12"><a href="#cb28-12" tabindex="-1"></a><span class="co">#&gt;                call  n      est variance      std       cv    lower    upper</span></span>
-<span id="cb28-13"><a href="#cb28-13" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190446.7 66673387 8165.377 4.287487 174442.9 206450.5</span></span></code></pre></div>
+<span id="cb28-11"><a href="#cb28-11" tabindex="-1"></a><span class="co">#&gt;   Calibration multiplies the variance by 1.938 (deft x 1.392).</span></span>
+<span id="cb28-12"><a href="#cb28-12" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower  upper</span></span>
+<span id="cb28-13"><a href="#cb28-13" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 248325893 15758.36 8.274313 159563.3 221335</span></span></code></pre></div>
 <p>When the wrapper includes a calibration step, the diagnostic
 automatically computes the variance of the <em>uncalibrated</em>
 estimator alongside (the Horvitz-Thompson estimator corrected for
@@ -1612,15 +1639,15 @@ input for designing future waves of the survey.</p>
 <span id="cb29-5"><a href="#cb29-5" tabindex="-1"></a><span class="co">#&gt; Variance under the actual design, relative to a simple random sample</span></span>
 <span id="cb29-6"><a href="#cb29-6" tabindex="-1"></a><span class="co">#&gt; of the same size (n = 48 disseminated units, estimated population N = 9 619).</span></span>
 <span id="cb29-7"><a href="#cb29-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb29-8"><a href="#cb29-8" tabindex="-1"></a><span class="co">#&gt;   statistic 1:  deff = 0.312  |  deft = 0.559  |  effective n = 154</span></span>
+<span id="cb29-8"><a href="#cb29-8" tabindex="-1"></a><span class="co">#&gt;   statistic 1:  deff = 1.163  |  deft = 1.078  |  effective n = 41</span></span>
 <span id="cb29-9"><a href="#cb29-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb29-10"><a href="#cb29-10" tabindex="-1"></a><span class="co">#&gt; A deff above 1 quantifies the precision cost of the design (clustering,</span></span>
 <span id="cb29-11"><a href="#cb29-11" tabindex="-1"></a><span class="co">#&gt; unequal weights); below 1, stratification and calibration gains dominate.</span></span>
 <span id="cb29-12"><a href="#cb29-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb29-13"><a href="#cb29-13" tabindex="-1"></a><span class="co">#&gt;   Kish decomposition:  deff_weights = 1.000 (CV of weights = 0.00)</span></span>
-<span id="cb29-14"><a href="#cb29-14" tabindex="-1"></a><span class="co">#&gt;   statistic 1:  deff_cluster = 0.312  |  roh = -0.0458  (mean cluster size = 16.0)</span></span>
-<span id="cb29-15"><a href="#cb29-15" tabindex="-1"></a><span class="co">#&gt;                call  n      est variance      std       cv    lower    upper</span></span>
-<span id="cb29-16"><a href="#cb29-16" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190446.7 66673387 8165.377 4.287487 174442.9 206450.5</span></span></code></pre></div>
+<span id="cb29-14"><a href="#cb29-14" tabindex="-1"></a><span class="co">#&gt;   statistic 1:  deff_cluster = 1.163  |  roh = 0.0109  (mean cluster size = 16.0)</span></span>
+<span id="cb29-15"><a href="#cb29-15" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower  upper</span></span>
+<span id="cb29-16"><a href="#cb29-16" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 248325893 15758.36 8.274313 159563.3 221335</span></span></code></pre></div>
 <p><strong>Warning signs.</strong></p>
 <ul>
 <li><em>deff far from 1 on a design that is (nearly) a SRS.</em> This is
@@ -1658,10 +1685,16 @@ would apply:</p>
 <pre><code>-- Degrees of freedom --
   df = 80 PSUs - 2 strata = 78
   Large-sample normal intervals are adequate.</code></pre>
-<p>versus, on a design with few primary units:</p>
-<pre><code>-- Degrees of freedom --
-  df = 18 PSUs - 6 strata = 12
-  Normal-based CIs are optimistic: a t-based CI would be 11.1 % wider.</code></pre>
+<p>versus, in our sample, we only have 4 PSU and no first-stage
+strata:</p>
+<div class="sourceCode" id="cb31"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" tabindex="-1"></a><span class="fu">qvar6</span>(lfs_samp_dwel, <span class="fu">total</span>(income), <span class="at">diagnostics =</span> <span class="st">&quot;dof&quot;</span>)</span>
+<span id="cb31-2"><a href="#cb31-2" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
+<span id="cb31-3"><a href="#cb31-3" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb31-4"><a href="#cb31-4" tabindex="-1"></a><span class="co">#&gt; -- Degrees of freedom --</span></span>
+<span id="cb31-5"><a href="#cb31-5" tabindex="-1"></a><span class="co">#&gt;   df = 3 PSUs - 1 strata = 2</span></span>
+<span id="cb31-6"><a href="#cb31-6" tabindex="-1"></a><span class="co">#&gt;   Normal-based CIs are optimistic: a t-based CI would be 119.5 % wider.</span></span>
+<span id="cb31-7"><a href="#cb31-7" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower  upper</span></span>
+<span id="cb31-8"><a href="#cb31-8" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 48 190449.2 248325893 15758.36 8.274313 159563.3 221335</span></span></code></pre></div>
 <p><strong>Warning signs.</strong></p>
 <ul>
 <li><em>df below ~30.</em> Normal intervals undercover; report t-based
@@ -1691,8 +1724,8 @@ the variance by the dispersion of the non-response weights:</p>
 <span id="cb32-10"><a href="#cb32-10" tabindex="-1"></a><span class="co">#&gt;   response rate: 77.9 % (weighted 77.9 %)</span></span>
 <span id="cb32-11"><a href="#cb32-11" tabindex="-1"></a><span class="co">#&gt;   response prob.: min 0.800 | median 0.800 | max 0.800</span></span>
 <span id="cb32-12"><a href="#cb32-12" tabindex="-1"></a><span class="co">#&gt;   reweighting inflation (Kish): x 1.000 on the NR-phase variance</span></span>
-<span id="cb32-13"><a href="#cb32-13" tabindex="-1"></a><span class="co">#&gt;                call  n    est  variance      std       cv    lower    upper</span></span>
-<span id="cb32-14"><a href="#cb32-14" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 53 194414 121112516 11005.11 5.660658 172844.4 215983.7</span></span></code></pre></div>
+<span id="cb32-13"><a href="#cb32-13" tabindex="-1"></a><span class="co">#&gt;                call  n      est  variance      std       cv    lower    upper</span></span>
+<span id="cb32-14"><a href="#cb32-14" tabindex="-1"></a><span class="co">#&gt; 1 total(y = income) 53 194416.5 858017146 29291.93 15.06658 137005.4 251827.7</span></span></code></pre></div>
 <p><strong>Warning signs.</strong></p>
 <ul>
 <li><em>Very small minimum response probabilities.</em> A <span class="math inline">\(\hat p_{\min}\)</span> below roughly 0.1 means
@@ -1719,21 +1752,21 @@ domain, and the machinery runs unchanged. The <code>&quot;domains&quot;</code>
 diagnostic counts the non-zero observations behind each requested
 statistic and flags small domains when observations falls below 50:</p>
 <div class="sourceCode" id="cb33"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" tabindex="-1"></a><span class="fu">qvar6</span>(lfs_samp_dwel,</span>
-<span id="cb33-2"><a href="#cb33-2" tabindex="-1"></a>  <span class="st">&quot;Income, stratum Q1&quot;</span> <span class="ot">=</span> <span class="fu">total</span>(income, <span class="at">where =</span> strata_dwel <span class="sc">==</span> <span class="st">&quot;Q1&quot;</span>),</span>
-<span id="cb33-3"><a href="#cb33-3" tabindex="-1"></a>  <span class="st">&quot;Income, stratum Q2&quot;</span> <span class="ot">=</span> <span class="fu">total</span>(income, <span class="at">where =</span> strata_dwel <span class="sc">==</span> <span class="st">&quot;Q2&quot;</span>),</span>
+<span id="cb33-2"><a href="#cb33-2" tabindex="-1"></a>  <span class="st">&quot;Income, stratum S1&quot;</span> <span class="ot">=</span> <span class="fu">total</span>(income, <span class="at">where =</span> strata_dwel <span class="sc">==</span> <span class="st">&quot;S1&quot;</span>),</span>
+<span id="cb33-3"><a href="#cb33-3" tabindex="-1"></a>  <span class="st">&quot;Income, stratum S2&quot;</span> <span class="ot">=</span> <span class="fu">total</span>(income, <span class="at">where =</span> strata_dwel <span class="sc">==</span> <span class="st">&quot;S2&quot;</span>),</span>
 <span id="cb33-4"><a href="#cb33-4" tabindex="-1"></a>  <span class="at">diagnostics =</span> <span class="st">&quot;domains&quot;</span></span>
 <span id="cb33-5"><a href="#cb33-5" tabindex="-1"></a>)</span>
 <span id="cb33-6"><a href="#cb33-6" tabindex="-1"></a><span class="co">#&gt; Warning: 32 observations do not match any responding units of the survey. They are discarded.</span></span>
 <span id="cb33-7"><a href="#cb33-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb33-8"><a href="#cb33-8" tabindex="-1"></a><span class="co">#&gt; -- Domain sample sizes --</span></span>
-<span id="cb33-9"><a href="#cb33-9" tabindex="-1"></a><span class="co">#&gt;   statistic 1: 8 non-zero observations  ** small domain: estimate may be unstable **</span></span>
-<span id="cb33-10"><a href="#cb33-10" tabindex="-1"></a><span class="co">#&gt;   statistic 2: 40 non-zero observations  ** small domain: estimate may be unstable **</span></span>
-<span id="cb33-11"><a href="#cb33-11" tabindex="-1"></a><span class="co">#&gt;                label                                           call  n</span></span>
-<span id="cb33-12"><a href="#cb33-12" tabindex="-1"></a><span class="co">#&gt; 1 Income, stratum Q1 total(y = income, where = strata_dwel == &quot;Q1&quot;)  8</span></span>
-<span id="cb33-13"><a href="#cb33-13" tabindex="-1"></a><span class="co">#&gt; 2 Income, stratum Q2 total(y = income, where = strata_dwel == &quot;Q2&quot;) 40</span></span>
-<span id="cb33-14"><a href="#cb33-14" tabindex="-1"></a><span class="co">#&gt;          est   variance       std       cv      lower      upper</span></span>
-<span id="cb33-15"><a href="#cb33-15" tabindex="-1"></a><span class="co">#&gt; 1   8201.345   521811.4  722.3652 8.807887   6785.535   9617.154</span></span>
-<span id="cb33-16"><a href="#cb33-16" tabindex="-1"></a><span class="co">#&gt; 2 182245.351 60172377.8 7757.0857 4.256397 167041.743 197448.960</span></span></code></pre></div>
+<span id="cb33-9"><a href="#cb33-9" tabindex="-1"></a><span class="co">#&gt;   statistic 1: 15 non-zero observations  ** small domain: estimate may be unstable **</span></span>
+<span id="cb33-10"><a href="#cb33-10" tabindex="-1"></a><span class="co">#&gt;   statistic 2: 13 non-zero observations  ** small domain: estimate may be unstable **</span></span>
+<span id="cb33-11"><a href="#cb33-11" tabindex="-1"></a><span class="co">#&gt;                label                                           call  n      est</span></span>
+<span id="cb33-12"><a href="#cb33-12" tabindex="-1"></a><span class="co">#&gt; 1 Income, stratum S1 total(y = income, where = strata_dwel == &quot;S1&quot;) 15 54622.71</span></span>
+<span id="cb33-13"><a href="#cb33-13" tabindex="-1"></a><span class="co">#&gt; 2 Income, stratum S2 total(y = income, where = strata_dwel == &quot;S2&quot;) 13 62277.33</span></span>
+<span id="cb33-14"><a href="#cb33-14" tabindex="-1"></a><span class="co">#&gt;    variance       std        cv    lower    upper</span></span>
+<span id="cb33-15"><a href="#cb33-15" tabindex="-1"></a><span class="co">#&gt; 1 100587981 10029.356 18.361148 34965.53 74279.88</span></span>
+<span id="cb33-16"><a href="#cb33-16" tabindex="-1"></a><span class="co">#&gt; 2   6409195  2531.639  4.065105 57315.41 67239.25</span></span></code></pre></div>
 <p><strong>Warning signs.</strong></p>
 <ul>
 <li><em>Domains below 50 observations.</em> Both the estimate and its
@@ -1796,19 +1829,6 @@ cells</td>
 </tr>
 </tbody>
 </table>
-</div>
-<div id="what-these-diagnostics-are-not" class="section level2">
-<h2>What these diagnostics are not</h2>
-<p>All the quantities above are by-products of the analytical
-(Taylor/Rao) decomposition: they share its assumptions — invariance and
-independence across stages, Poisson non-response within cells,
-first-order linearization of calibration — and cannot validate those
-assumptions from within. The standard external check is to re-estimate a
-few key variances with a replication method (jackknife or bootstrap):
-agreement between the analytical and replicated variances is the
-strongest available evidence that the design description encoded in the
-wrapper is faithful. This is a natural extension for a future
-version.</p>
 </div>
 </div>
 <div id="inspecting-a-variance-wrapper" class="section level1">
@@ -1902,7 +1922,7 @@ cards, <em>before</em> any estimation is run.</li>
 <span id="cb35-29"><a href="#cb35-29" tabindex="-1"></a><span class="co">#&gt;     Cond. sampling weight: [6, 6.05]</span></span>
 <span id="cb35-30"><a href="#cb35-30" tabindex="-1"></a><span class="co">#&gt;     Upper weight:    [19.92, 19.92]</span></span>
 <span id="cb35-31"><a href="#cb35-31" tabindex="-1"></a><span class="co">#&gt;     Non-response corr.:     YES - 48 respondents, response prob. in [0.6, 0.6] (mean 0.6)</span></span>
-<span id="cb35-32"><a href="#cb35-32" tabindex="-1"></a><span class="co">#&gt;     Calibration:            YES - 48 units, 2 variables</span></span>
+<span id="cb35-32"><a href="#cb35-32" tabindex="-1"></a><span class="co">#&gt;     Calibration:            YES - 48 units, 3 variables</span></span>
 <span id="cb35-33"><a href="#cb35-33" tabindex="-1"></a><span class="co">#&gt;     Aggregates to:          4 parent units (stage 1)</span></span>
 <span id="cb35-34"><a href="#cb35-34" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb35-35"><a href="#cb35-35" tabindex="-1"></a><span class="co">#&gt;   Stage 3 (final units)</span></span>
@@ -1918,35 +1938,36 @@ cards, <em>before</em> any estimation is run.</li>
 <span id="cb35-45"><a href="#cb35-45" tabindex="-1"></a><span class="co">#&gt; -- Technical parameters --</span></span>
 <span id="cb35-46"><a href="#cb35-46" tabindex="-1"></a><span class="co">#&gt;   single_unit_strata &lt;character&gt; length 1</span></span>
 <span id="cb35-47"><a href="#cb35-47" tabindex="-1"></a><span class="co">#&gt;   diagnostics: NULL</span></span>
-<span id="cb35-48"><a href="#cb35-48" tabindex="-1"></a><span class="co">#&gt; -- Variance estimation pipeline (execution order) --</span></span>
-<span id="cb35-49"><a href="#cb35-49" tabindex="-1"></a><span class="co">#&gt;    1 L3 ─[y]─── add_zero()  Expand y to all stage-3 sampled units (zeros elsewhere)</span></span>
-<span id="cb35-50"><a href="#cb35-50" tabindex="-1"></a><span class="co">#&gt;            68 units</span></span>
-<span id="cb35-51"><a href="#cb35-51" tabindex="-1"></a><span class="co">#&gt;    2 L3 ─[V_NR]─ var_pois()  Non-response variance (Poisson) — stage 3</span></span>
-<span id="cb35-52"><a href="#cb35-52" tabindex="-1"></a><span class="co">#&gt;            53 responding units, response prob. in [0.8, 0.8] — weight w = upper_weight × conditional sampling weight</span></span>
-<span id="cb35-53"><a href="#cb35-53" tabindex="-1"></a><span class="co">#&gt;    3 L3 ─[y]─── Diagonal()  Non-response reweighting — stage 3</span></span>
-<span id="cb35-54"><a href="#cb35-54" tabindex="-1"></a><span class="co">#&gt;            expansion of the 53 responding units</span></span>
-<span id="cb35-55"><a href="#cb35-55" tabindex="-1"></a><span class="co">#&gt;    4 L3 ─[V_SMP]─ var_srs()  Sampling variance (stratified SRS) — stage 3</span></span>
-<span id="cb35-56"><a href="#cb35-56" tabindex="-1"></a><span class="co">#&gt;            40 units (28 excluded: single-unit strata), 0 strata (parent × declared strata) — w = upper_weight</span></span>
-<span id="cb35-57"><a href="#cb35-57" tabindex="-1"></a><span class="co">#&gt;    5 L3 ─[AGG]── sum_by()  Aggregate to stage 2 (estimated totals per parent unit)</span></span>
-<span id="cb35-58"><a href="#cb35-58" tabindex="-1"></a><span class="co">#&gt;            48 parent units</span></span>
-<span id="cb35-59"><a href="#cb35-59" tabindex="-1"></a><span class="co">#&gt;    6 L2 ─[y]─── add_zero()  Expand y to all stage-2 sampled units (zeros elsewhere)</span></span>
-<span id="cb35-60"><a href="#cb35-60" tabindex="-1"></a><span class="co">#&gt;            80 units</span></span>
-<span id="cb35-61"><a href="#cb35-61" tabindex="-1"></a><span class="co">#&gt;    7 L2 ─[CAL]── res_cal()  Calibration residuals</span></span>
-<span id="cb35-62"><a href="#cb35-62" tabindex="-1"></a><span class="co">#&gt;            48 calibrated units, 2 calibration variables (discretized)</span></span>
-<span id="cb35-63"><a href="#cb35-63" tabindex="-1"></a><span class="co">#&gt;    8 L2 ─[V_NR]─ var_pois()  Non-response variance (Poisson) — stage 2</span></span>
-<span id="cb35-64"><a href="#cb35-64" tabindex="-1"></a><span class="co">#&gt;            48 responding units, response prob. in [0.6, 0.6] — weight w = upper_weight × conditional sampling weight</span></span>
-<span id="cb35-65"><a href="#cb35-65" tabindex="-1"></a><span class="co">#&gt;    9 L2 ─[y]─── Diagonal()  Non-response reweighting — stage 2</span></span>
-<span id="cb35-66"><a href="#cb35-66" tabindex="-1"></a><span class="co">#&gt;            expansion of the 48 responding units</span></span>
-<span id="cb35-67"><a href="#cb35-67" tabindex="-1"></a><span class="co">#&gt;   10 L2 ─[V_SMP]─ var_srs()  Sampling variance (stratified SRS) — stage 2</span></span>
-<span id="cb35-68"><a href="#cb35-68" tabindex="-1"></a><span class="co">#&gt;            80 units, 4 strata (parent × declared strata) — w = upper_weight</span></span>
-<span id="cb35-69"><a href="#cb35-69" tabindex="-1"></a><span class="co">#&gt;   11 L2 ─[AGG]── sum_by()  Aggregate to stage 1 (estimated totals per parent unit)</span></span>
-<span id="cb35-70"><a href="#cb35-70" tabindex="-1"></a><span class="co">#&gt;            4 parent units</span></span>
-<span id="cb35-71"><a href="#cb35-71" tabindex="-1"></a><span class="co">#&gt;   12 L1 ─[y]─── add_zero()  Expand y to all stage-1 sampled units (zeros elsewhere)</span></span>
-<span id="cb35-72"><a href="#cb35-72" tabindex="-1"></a><span class="co">#&gt;            4 units</span></span>
-<span id="cb35-73"><a href="#cb35-73" tabindex="-1"></a><span class="co">#&gt;   13 L1 ─[V_SMP]─ var_srs()  Sampling variance (stratified SRS) — stage 1</span></span>
-<span id="cb35-74"><a href="#cb35-74" tabindex="-1"></a><span class="co">#&gt;            4 units, 1 strata — w = 1 (top stage)</span></span>
-<span id="cb35-75"><a href="#cb35-75" tabindex="-1"></a><span class="co">#&gt;   14    ─[SUM]── Reduce()  Sum variance components</span></span>
-<span id="cb35-76"><a href="#cb35-76" tabindex="-1"></a><span class="co">#&gt;            5 components: nr_stage3, sampling_stage3, nr_stage2, sampling_stage2, sampling_stage1</span></span></code></pre></div>
+<span id="cb35-48"><a href="#cb35-48" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb35-49"><a href="#cb35-49" tabindex="-1"></a><span class="co">#&gt; -- Variance estimation pipeline (execution order) --</span></span>
+<span id="cb35-50"><a href="#cb35-50" tabindex="-1"></a><span class="co">#&gt;    1 L3 ─[y]─── add_zero()  Expand y to all stage-3 sampled units (zeros elsewhere)</span></span>
+<span id="cb35-51"><a href="#cb35-51" tabindex="-1"></a><span class="co">#&gt;            68 units</span></span>
+<span id="cb35-52"><a href="#cb35-52" tabindex="-1"></a><span class="co">#&gt;    2 L3 ─[V_NR]─ var_pois()  Non-response variance (Poisson) — stage 3</span></span>
+<span id="cb35-53"><a href="#cb35-53" tabindex="-1"></a><span class="co">#&gt;            53 responding units, response prob. in [0.8, 0.8] — weight w = upper_weight × conditional sampling weight</span></span>
+<span id="cb35-54"><a href="#cb35-54" tabindex="-1"></a><span class="co">#&gt;    3 L3 ─[y]─── Diagonal()  Non-response reweighting — stage 3</span></span>
+<span id="cb35-55"><a href="#cb35-55" tabindex="-1"></a><span class="co">#&gt;            expansion of the 53 responding units</span></span>
+<span id="cb35-56"><a href="#cb35-56" tabindex="-1"></a><span class="co">#&gt;    4 L3 ─[V_SMP]─ var_srs()  Sampling variance (stratified SRS) — stage 3</span></span>
+<span id="cb35-57"><a href="#cb35-57" tabindex="-1"></a><span class="co">#&gt;            40 units (28 excluded: single-unit strata), 0 strata (parent × declared strata) — w = upper_weight</span></span>
+<span id="cb35-58"><a href="#cb35-58" tabindex="-1"></a><span class="co">#&gt;    5 L3 ─[AGG]── sum_by()  Aggregate to stage 2 (estimated totals per parent unit)</span></span>
+<span id="cb35-59"><a href="#cb35-59" tabindex="-1"></a><span class="co">#&gt;            48 parent units</span></span>
+<span id="cb35-60"><a href="#cb35-60" tabindex="-1"></a><span class="co">#&gt;    6 L2 ─[y]─── add_zero()  Expand y to all stage-2 sampled units (zeros elsewhere)</span></span>
+<span id="cb35-61"><a href="#cb35-61" tabindex="-1"></a><span class="co">#&gt;            80 units</span></span>
+<span id="cb35-62"><a href="#cb35-62" tabindex="-1"></a><span class="co">#&gt;    7 L2 ─[CAL]── res_cal()  Calibration residuals</span></span>
+<span id="cb35-63"><a href="#cb35-63" tabindex="-1"></a><span class="co">#&gt;            48 calibrated units, 3 calibration variables (discretized)</span></span>
+<span id="cb35-64"><a href="#cb35-64" tabindex="-1"></a><span class="co">#&gt;    8 L2 ─[V_NR]─ var_pois()  Non-response variance (Poisson) — stage 2</span></span>
+<span id="cb35-65"><a href="#cb35-65" tabindex="-1"></a><span class="co">#&gt;            48 responding units, response prob. in [0.6, 0.6] — weight w = upper_weight × conditional sampling weight</span></span>
+<span id="cb35-66"><a href="#cb35-66" tabindex="-1"></a><span class="co">#&gt;    9 L2 ─[y]─── Diagonal()  Non-response reweighting — stage 2</span></span>
+<span id="cb35-67"><a href="#cb35-67" tabindex="-1"></a><span class="co">#&gt;            expansion of the 48 responding units</span></span>
+<span id="cb35-68"><a href="#cb35-68" tabindex="-1"></a><span class="co">#&gt;   10 L2 ─[V_SMP]─ var_srs()  Sampling variance (stratified SRS) — stage 2</span></span>
+<span id="cb35-69"><a href="#cb35-69" tabindex="-1"></a><span class="co">#&gt;            80 units, 4 strata (parent × declared strata) — w = upper_weight</span></span>
+<span id="cb35-70"><a href="#cb35-70" tabindex="-1"></a><span class="co">#&gt;   11 L2 ─[AGG]── sum_by()  Aggregate to stage 1 (estimated totals per parent unit)</span></span>
+<span id="cb35-71"><a href="#cb35-71" tabindex="-1"></a><span class="co">#&gt;            4 parent units</span></span>
+<span id="cb35-72"><a href="#cb35-72" tabindex="-1"></a><span class="co">#&gt;   12 L1 ─[y]─── add_zero()  Expand y to all stage-1 sampled units (zeros elsewhere)</span></span>
+<span id="cb35-73"><a href="#cb35-73" tabindex="-1"></a><span class="co">#&gt;            4 units</span></span>
+<span id="cb35-74"><a href="#cb35-74" tabindex="-1"></a><span class="co">#&gt;   13 L1 ─[V_SMP]─ var_srs()  Sampling variance (stratified SRS) — stage 1</span></span>
+<span id="cb35-75"><a href="#cb35-75" tabindex="-1"></a><span class="co">#&gt;            4 units, 1 strata — w = 1 (top stage)</span></span>
+<span id="cb35-76"><a href="#cb35-76" tabindex="-1"></a><span class="co">#&gt;   14    ─[SUM]── Reduce()  Sum variance components</span></span>
+<span id="cb35-77"><a href="#cb35-77" tabindex="-1"></a><span class="co">#&gt;            5 components: nr_stage3, sampling_stage3, nr_stage2, sampling_stage2, sampling_stage1</span></span></code></pre></div>
 <p>The function prints a console summary and opens an HTML report in the
 browser (use <code>plot = FALSE</code> for console-only, or
 <code>file =</code> to choose where the report is written, e.g. to
@@ -2149,11 +2170,99 @@ and tables, instead of living in a separate results file. This
 design-object layer is under construction and beyond the scope of this
 vignette.</p>
 </div>
+<div id="annexe" class="section level1">
+<h1>Annexe</h1>
+<div id="one-responding-unit-the-poisson-term-as-the-natural-continuation-of-the-srs-formula" class="section level2">
+<h2>One responding unit: the Poisson term as the natural continuation of
+the SRS formula</h2>
+<p>Two situations must be distinguished in a stratum. When it contains a
+single <em>sampled</em> unit, the SRS variance formula is undefined (the
+<span class="math inline">\(s^2\)</span> term divides by <span class="math inline">\(n - 1 = 0\)</span>): this is the case handled by
+the <code>single_unit_strata</code> treatment. When it contains several
+sampled units of which a single one <em>responds</em>, the SRS formula
+remains perfectly defined, provided the non-responding units are kept in
+the computation with a zero value — which is exactly what the
+<code>add_zero()</code> mechanism of <code>gustave</code> does. This
+appendix shows that, in the latter case, the SRS formula over all <span class="math inline">\(n\)</span> sampled units is <strong>algebraically
+identical</strong> to the Poisson variance term of the lone respondent.
+This identity both explains why strata with a single respondent require
+no special treatment, and motivates the Poisson fallback as the natural
+continuation of the SRS formula when even the zeros disappear. Notations
+follow Chauvet’s lecture notes on variance estimation (Ensai): <a href="https://ensai.fr/wp-content/uploads/2019/06/TechEchMaster_EstVariance_v1.pdf" class="uri">https://ensai.fr/wp-content/uploads/2019/06/TechEchMaster_EstVariance_v1.pdf</a></p>
+<div id="from-the-horvitz-thompson-variance-estimator" class="section level3">
+<h3>From the Horvitz-Thompson variance estimator</h3>
+<p>Under an arbitrary design, the total is estimated by <span class="math display">\[
+\hat t_{y\pi} = \sum_{k \in S} \frac{y_k}{\pi_k},
+\]</span> and its variance is estimated (without bias, provided all
+joint inclusion probabilities are positive) by <span class="math display">\[
+\hat v_{HT}(\hat t_{y\pi}) = \sum_{k,l \in S}
+\frac{y_k}{\pi_k} \frac{y_l}{\pi_l}
+\frac{\pi_{kl} - \pi_k \pi_l}{\pi_{kl}}.
+\]</span> Suppose a single unit <span class="math inline">\(k\)</span>
+of the sample carries a non-zero value — say, one respondent with <span class="math inline">\(y_k = 10\)</span> among four units sampled with
+<span class="math inline">\(\pi = 0.25\)</span>, the three
+non-respondents entering with <span class="math inline">\(y =
+0\)</span>. Every term of the double sum contains a product <span class="math inline">\(y_k y_l\)</span> and therefore vanishes, except
+the diagonal term <span class="math inline">\(k = l\)</span>. With the
+convention <span class="math inline">\(\pi_{kk} = \pi_k\)</span>, the
+estimator collapses to <span class="math display">\[
+\hat v_{HT}(\hat t_{y\pi})
+= \left(\frac{y_k}{\pi_k}\right)^2 \frac{\pi_k - \pi_k^2}{\pi_k}
+= \left(\frac{y_k}{\pi_k}\right)^2 (1 - \pi_k),
+\]</span> which is precisely the contribution of unit <span class="math inline">\(k\)</span> under a Poisson design — the term
+computed by <code>var_pois()</code>.</p>
+</div>
+<div id="from-the-srs-formula-with-zeroed-non-respondents" class="section level3">
+<h3>From the SRS formula with zeroed non-respondents</h3>
+<p>Under simple random sampling (equal inclusion probabilities <span class="math inline">\(\pi_k = n/N\)</span>), the total is estimated by
+<span class="math inline">\(\hat t_{y\pi} = N \bar y\)</span> with <span class="math inline">\(\bar y = \frac{1}{n} \sum_{k \in S} y_k\)</span>,
+and its variance by the classical formula <span class="math display">\[
+\hat v(\hat t_{y\pi}) = N^2 \, \frac{1-f}{n} \, s^2_y,
+\qquad
+s^2_y = \frac{1}{n-1} \sum_{k \in S} (y_k - \bar y)^2,
+\qquad f = \frac{n}{N}.
+\]</span> With a single non-zero unit <span class="math inline">\(k\)</span>, the sum of squares splits into the
+contribution of the respondent and that of the <span class="math inline">\(n - 1\)</span> zero-valued units, each equal to
+<span class="math inline">\(\bar y^2\)</span>: <span class="math display">\[
+s^2_y = \frac{1}{n-1} \left( (y_k - \bar y)^2 + (n-1)\,\bar y^2 \right)
+      = \frac{1}{n-1} \left( y_k^2 - 2 y_k \bar y + n \bar y^2 \right).
+\]</span> Since <span class="math inline">\(\bar y = y_k / n\)</span>,
+<span class="math display">\[
+s^2_y = \frac{1}{n-1}
+\left( y_k^2 - \frac{2 y_k^2}{n} + \frac{y_k^2}{n} \right)
+= \frac{y_k^2}{n-1} \cdot \frac{n-1}{n}
+= \frac{y_k^2}{n}.
+\]</span> Injecting into the full formula, with <span class="math inline">\(f = \pi_k = n/N\)</span>: <span class="math display">\[
+\hat v(\hat t_{y\pi})
+= N^2 \, \frac{1 - f}{n} \, \frac{y_k^2}{n}
+= \left(1 - \pi_k\right) \frac{N^2 y_k^2}{n^2}
+= \left(\frac{y_k}{\pi_k}\right)^2 (1 - \pi_k)
+= \hat v_{HT}(\hat t_{y\pi}).
+\]</span></p>
+</div>
+<div id="how-to-use-it-in-qvar_ms" class="section level3">
+<h3>How to use it in <code>qvar_ms()</code> ?</h3>
+<p>The two computations are rigorously identical: since the
+Deville-Tillé formula implemented by <code>varDT()</code> reduces
+exactly to the classical SRS estimator under equal inclusion
+probabilities, the identity holds for the actual <code>gustave</code>
+computation. Two consequences for <code>qvar_ms()</code>. First, strata
+with a single <em>respondent</em> among several sampled units require no
+special treatment: the SRS formula with zeroed non-respondents already
+computes the right quantity. Second, when the stratum contains a single
+<em>sampled</em> unit, <span class="math inline">\(s^2_y\)</span> is
+undefined but the diagonal Horvitz-Thompson term <span class="math inline">\((1-\pi_k)(y_k/\pi_k)^2\)</span> remains available:
+this is the term added by
+<code>single_unit_strata = &quot;poisson&quot;</code>.</p>
+</div>
+</div>
+</div>
 <div id="references" class="section level1">
 <h1>References</h1>
 <ul>
 <li>Caron N. (1998), “Le logiciel Poulpe : aspects méthodologiques”,
 <em>Actes des Journées de méthodologie statistique</em>, <a href="http://jms-insee.fr/jms1998s03_1/" class="uri">http://jms-insee.fr/jms1998s03_1/</a></li>
+<li>Chauvet G., Estimation de variance, <em>Ensai</em>, <a href="https://ensai.fr/wp-content/uploads/2019/06/TechEchMaster_EstVariance_v1.pdf" class="uri">https://ensai.fr/wp-content/uploads/2019/06/TechEchMaster_EstVariance_v1.pdf</a></li>
 <li>Kish L. (1965), <em>Survey Sampling</em>, Wiley.</li>
 <li>Kish L. (1992), “Weighting for unequal P_i”, <em>Journal of Official
 Statistics</em>, 8(2), 183–200.</li>
