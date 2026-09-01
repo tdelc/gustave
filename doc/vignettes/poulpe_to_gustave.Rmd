@@ -3,15 +3,15 @@ title: "Variance Estimation from SAS Poulpe to R Gustave"
 author: "Thomas Delclite"
 date: "29/05/2026"
 output: 
-  rmarkdown::html_vignette:
-    fig_width: 8 
-    fig_height: 6
   rmarkdown::pdf_document:
     fig_width: 8
     fig_height: 6
     toc: true
     number_sections: true
     latex_engine: xelatex
+  rmarkdown::html_vignette:
+    fig_width: 8 
+    fig_height: 6
 vignette: >
   %\VignetteIndexEntry{Variance Estimation from SAS Poulpe to R Gustave}
   %\VignetteEncoding{UTF-8}
@@ -147,6 +147,10 @@ library(extrapolation)
 lfs_samp_area <- gustave::lfs_samp_area
 lfs_samp_dwel <- gustave::lfs_samp_dwel
 lfs_samp_ind  <- gustave::lfs_samp_ind
+
+# Configuration of SASpy to transfert db
+options(reticulate.conda_binary = 'C:/Users/Thomas.Delclite/AppData/Local/miniforge3/condabin/conda.bat')
+sas <- sas::sas_create_session()
 ```
 
 ```{r libraries, eval = FALSE}
@@ -223,6 +227,8 @@ lfs_samp_area$w_area       <- 1 / lfs_samp_area$pik_area
 lfs_samp_area$w_area       <- base::mean(lfs_samp_area$w_area)
 lfs_samp_dwel$w_dwel_cond  <- 1 / lfs_samp_dwel$pik_dwel
 lfs_samp_dwel$w_dwel       <- lfs_samp_area$w_area * lfs_samp_dwel$w_dwel_cond
+lfs_samp_dwel <- lfs_samp_dwel %>% select(-pik_area) %>% 
+  left_join(lfs_samp_area %>% select(id_area,w_area), by = "id_area")
 ```
 
 For the first three cases, we will consider only the dwelling level to
@@ -415,7 +421,7 @@ var_sample <- function(y, lfs_samp_dwel) {
   variance <- list()
   variance[["srs"]] <- var_srs(
     y,
-    pik    = lfs_samp_dwel$pik,
+    pik    = 1 / lfs_samp_dwel$w_dwel,
     strata = lfs_samp_dwel$id_area
   )
   Reduce(`+`, variance)
@@ -514,6 +520,12 @@ lfs_samp_dwel$w_dwel_nrc[!lfs_samp_dwel$rep] <- 0
 lfs_samp_dwel$income[!lfs_samp_dwel$rep]  <- 0
 ```
 
+```{r transfert_sas_case2, include = FALSE}
+sas$saslib('CMC', path="F:\\Dwh\\1. General\\1.4 Methodology\\1.4.4. CMC Share\\Migration from SAS to R")
+lfs_samp_dwel_sas <- lfs_samp_dwel %>% 
+  mutate(across(is.logical,as.numeric))
+sas$df2sd(lfs_samp_dwel_sas,"lfs_samp_dwel","CMC")
+```
 
 ## Variance decomposition
 
@@ -625,7 +637,7 @@ var_sample_nrc <- function(y, lfs_samp_dwel) {
   # The variable must be divided by the response probability
   variance[["srs"]] <- var_srs(
     y / (lfs_samp_dwel$w_dwel / lfs_samp_dwel$w_dwel_nrc),
-    pik    = lfs_samp_dwel$pik,
+    pik    = 1 / lfs_samp_dwel$w_dwel,
     strata = lfs_samp_dwel$id_area
   )
   
@@ -908,7 +920,7 @@ var_sample_cal <- function(y, lfs_samp_dwel) {
   # Step 4: Sampling variance (SRS, full sample)
   variance[["srs"]] <- var_srs(
     y / (lfs_samp_dwel$prep),
-    pik    = lfs_samp_dwel$pik,
+    pik    = 1 / lfs_samp_dwel$w_dwel,
     strata = lfs_samp_dwel$id_area
   )
   
@@ -1123,18 +1135,20 @@ var_sample_two <- function(y, lfs_samp_area, lfs_samp_dwel) {
   # One variance per PSU, weighted by PSU size
   variance[["srs-dwel"]] <- unique(lfs_samp_dwel$id_area) %>% map(~{
     sub <- lfs_samp_dwel %>% filter(id_area == .x)
-    pik_area <- unique(sub$pik_area)
+    pik_area <- 1 / unique(sub$w_area)
     var_srs(
       y[sub$id_dwel, ,drop = FALSE] / sub$prep,
-      pik    = sub$pik_dwel
+      pik    = 1 / sub$w_dwel_cond
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
-  y_area <- sum_by(y / lfs_samp_dwel$prep, by = lfs_samp_dwel$id_area, w = 1 / lfs_samp_dwel$pik_dwel)
+  y_area <- sum_by(y / lfs_samp_dwel$prep, 
+                   by = lfs_samp_dwel$id_area, 
+                   w = lfs_samp_dwel$w_dwel)
   
   variance[["srs-area"]] <- var_srs(
     y_area[lfs_samp_area$id_area, , drop = FALSE],
-    pik    = lfs_samp_area$pik_area
+    pik    = 1 / lfs_samp_area$w_area
   )
   
   diag_env$components <- variance
@@ -1403,19 +1417,19 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
   # One variance per PSU, weighted by PSU size
   variance[["srs-dwel"]] <- unique(lfs_samp_dwel$id_area) %>% map(~{
     sub <- lfs_samp_dwel %>% filter(id_area == .x)
-    pik_area <- unique(sub$pik_area)
+    pik_area <- 1 / unique(sub$w_area)
     var_srs(
       y_dwel[sub$id_dwel, ,drop = FALSE],
-      pik = sub$pik_dwel
+      pik = 1 / sub$w_dwel_cond
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
   # --- Transition: aggregate to PSU level ---
-  y_area <- sum_by(y_dwel, by = lfs_samp_dwel$id_area, w = 1 / lfs_samp_dwel$pik_dwel)
+  y_area <- sum_by(y_dwel, by = lfs_samp_dwel$id_area, w = lfs_samp_dwel$w_dwel)
   
   variance[["srs-area"]] <- var_srs(
     y_area[lfs_samp_area$id_area, , drop = FALSE],
-    pik    = lfs_samp_area$pik_area
+    pik    = 1 / lfs_samp_area$w_area
   )
   
   diag_env_1$components <- variance
@@ -1481,19 +1495,21 @@ var_sample_three_2 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
   # One variance per PSU, weighted by PSU size
   variance[["srs-hh"]] <- unique(lfs_samp_dwel$id_area) %>% map(~{
     sub <- lfs_samp_dwel %>% filter(id_area == .x)
-    pik_area <- unique(sub$pik_area)
+    pik_area <- 1 / unique(sub$w_area)
     var_srs(
       y_dwel[sub$id_dwel, ,drop = FALSE] / sub$prep,
-      pik = sub$pik_dwel
+      pik = 1 / sub$w_dwel_cond
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
   # --- Transition: aggregate to PSU level ---
-  y_area <- sum_by(y_dwel / lfs_samp_dwel$prep, by = lfs_samp_dwel$id_area, w = 1 / lfs_samp_dwel$pik_dwel)
+  y_area <- sum_by(y_dwel / lfs_samp_dwel$prep, 
+                   by = lfs_samp_dwel$id_area, 
+                   w = lfs_samp_dwel$w_dwel)
   
   variance[["srs-psu"]] <- var_srs(
     y_area[lfs_samp_area$id_area, , drop = FALSE],
-    pik    = lfs_samp_area$pik_area
+    pik    = 1 / lfs_samp_area$w_area
   )
   
   diag_env_2$components <- variance
@@ -1612,7 +1628,7 @@ precision2_three_2(lfs_samp_ind,total(income))
 
 ## Comparing the two models
 
-The point estimate is identical in both versions ($202\,636.6$), as it
+The point estimate is identical in both versions ($190\,449.2$), as it
 must be: the two wrappers encode the same final weights, and only the
 *description* of how those weights were built differs — non-response and
 calibration declared at the individual stage (model 1) or at the dwelling
@@ -1626,19 +1642,19 @@ precision2_three_2(lfs_samp_ind,total(income), diagnostics = "comp")
 ```
 
 **Start with the "without calibration" column: the two models are
-practically equivalent** ($5.341 \times 10^8$ vs $5.343 \times 10^8$, a
-$0.04\,\%$ difference). This is no accident. Since the response
-probability is constant within each dwelling, expanding the individual
+practically equivalent** ($5.515 \times 10^8$ vs $5.523 \times 10^8$). 
+Since the response probability is constant within each dwelling, 
+expanding the individual
 values by $1/\hat p$ and then aggregating to dwelling totals (model 1)
 gives the same totals as aggregating first and expanding afterwards
 (model 2): the sampling components of stages 1 and 2 are therefore
-identical by construction ($5.217 \times 10^8$ and $1.133 \times 10^7$ in
+identical by construction ($2.271 \times 10^8$ and $2.2 \times 10^7$ in
 both printouts). Only the non-response component itself differs:
-$1.03 \times 10^6$ at the individual stage versus $1.32 \times 10^6$ at
-the dwelling stage ($+28\,\%$). The dwelling-level Poisson term operates
+$2.436 \times 10^6$ at the individual stage versus $3.213 \times 10^6$ at
+the dwelling stage ($+32\,\%$). The dwelling-level Poisson term operates
 on aggregated totals — larger squared values — summed over fewer units,
 which reduces the averaging effect. But this component weighs less than
-$0.3\,\%$ of the uncalibrated total: for this design, *where the
+$0.6\,\%$ of the uncalibrated total: for this design, *where the
 non-response correction is declared is almost immaterial to the
 uncalibrated variance*.
 
@@ -1647,22 +1663,22 @@ models.** The calibration variable is `id_area`: a post-stratification on
 the primary sampling units themselves. The estimated area totals are
 thereby constrained to fixed margins, so their sampling variability
 vanishes: the `sampling_stage1` component collapses to zero in both models. 
-Since stage 1 carried $97.7\,\%$ of the uncalibrated variance, the overall 
-effect is dramatic — the variance is multiplied by $0.015$ (model 1) and 
-$0.012$ (model 2). This is a deliberately extreme, didactic margin: 
+Since stage 2 carried $97.7\,\%$ of the uncalibrated variance, the overall 
+effect is dramatic — the variance is decreased by $97.9\,\%$ (model 1) and 
+$97.5\,\%$ (model 2). This is a deliberately extreme, didactic margin: 
 calibrating on the PSUs amounts to stratifying *ex post* on them, and 
 real-life margins (socio-demographic totals) will reduce, not annihilate, 
 the first-stage component.
 
 **The remaining $24\,\%$ gap between the models
-($7.93 \times 10^6$ vs $6.41 \times 10^6$, CV $1.39\,\%$ vs $1.25\,\%$)
+($7.242 \times 10^6$ vs $8.933 \times 10^6$, CV $1.41\,\%$ vs $1.57\,\%$)
 is entirely a matter of *where the residualization occurs*.** In model 2,
 the dwelling totals are replaced by their calibration residuals at stage
 2, *before* the stage-2 non-response and sampling terms are computed:
-calibration then absorbs $82.3\,\%$ of the non-response component and
-$45.4\,\%$ of the stage-2 sampling component. In model 1, the residuals
+calibration then absorbs $80.5\,\%$ of the non-response component and
+$62.2\,\%$ of the stage-2 sampling component. In model 1, the residuals
 are taken at the individual stage and only reach stage 2 through
-aggregation, absorbing less ($-73.2\,\%$ and $-32.4\,\%$). Residualizing
+aggregation, absorbing less ($-75.4\,\%$ and $-69.8\,\%$). Residualizing
 at the stage where the variance actually lives captures more of it — a
 general lesson worth remembering when a survey leaves the calibration
 stage open.
