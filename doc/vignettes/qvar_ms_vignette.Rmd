@@ -12,6 +12,10 @@ output:
   rmarkdown::html_vignette:
     toc: true
     toc_depth: 2
+header-includes: |
+  \usepackage{fvextra}
+  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines}
 vignette: >
   %\VignetteIndexEntry{Multistage variance estimation with qvar_ms}
   %\VignetteEncoding{UTF-8}
@@ -20,10 +24,13 @@ vignette: >
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(
+  echo = TRUE,
+  message = TRUE,
+  warning = TRUE,
   collapse = TRUE,
   comment = "#>",
-  message = TRUE, 
-  warning = TRUE
+  out.width = "100%",
+  fig.align = "center"
 )
 ```
 
@@ -1404,7 +1411,6 @@ living in a separate results file. This design-object layer is under
 construction and beyond the scope of this vignette.
 
 # Annexe
-
 
 ## One responding unit: the Poisson term as the natural continuation of the SRS formula
 

@@ -12,6 +12,10 @@ output:
   rmarkdown::html_vignette:
     fig_width: 8 
     fig_height: 6
+header-includes: |
+  \usepackage{fvextra}
+  \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines}
 vignette: >
   %\VignetteIndexEntry{Variance Estimation from SAS Poulpe to R Gustave}
   %\VignetteEncoding{UTF-8}
@@ -24,8 +28,8 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
-  message = FALSE,
-  warning = FALSE,
+  message = TRUE,
+  warning = TRUE,
   collapse = TRUE,
   comment = "#>",
   out.width = "100%",
@@ -110,8 +114,8 @@ the most complex case:
     calibration)
 2.  **Adding non-response** correction through reweighting
 3.  **Adding calibration** on population margins
-4.  **Two-stage sampling** with PSU then dwelling
-5.  **Two-stage sampling** with PSU then dwelling, with individual
+4.  **Two-stage sampling** with area then dwelling
+5.  **Two-stage sampling** with area then dwelling, with individual
     answers
 
 At each step, we introduce the relevant `gustave` functions and
@@ -147,7 +151,9 @@ library(extrapolation)
 lfs_samp_area <- gustave::lfs_samp_area
 lfs_samp_dwel <- gustave::lfs_samp_dwel
 lfs_samp_ind  <- gustave::lfs_samp_ind
+```
 
+```{r sas_config, include=FALSE, eval = FALSE}
 # Configuration of SASpy to transfert db
 options(reticulate.conda_binary = 'C:/Users/Thomas.Delclite/AppData/Local/miniforge3/condabin/conda.bat')
 sas <- sas::sas_create_session()
@@ -157,7 +163,6 @@ sas <- sas::sas_create_session()
 library(tidyverse)
 library(gt)
 library(gustave)
-library(extrapolation)
 
 lfs_samp_area <- gustave::lfs_samp_area
 lfs_samp_dwel <- gustave::lfs_samp_dwel
@@ -183,7 +188,7 @@ Key variables in the area sample (`lfs_samp_area`,
   below use the dwelling- and individual-level incomes)
 - `pik_area`: probability of selection of the area (between
   $`r round(min(lfs_samp_area$pik_area), 4)`$ and
-  $`r round(max(lfs_samp_area$pik_area), 4)`$ — nearly equal by design)
+  $`r round(max(lfs_samp_area$pik_area), 4)`$)
   
 Key variables in the dwelling sample (`lfs_samp_dwel`,
 `r nrow(lfs_samp_dwel)` dwellings in `r nrow(lfs_samp_area)` areas,
@@ -329,6 +334,8 @@ The key arguments are:
 - `sampling_weight`: the initial design weight.
 - `strata`: the stratification variable.
 
+``qvar()` displays notes about the variance estimation process, recalling 
+the survey design and the variable transformations it required. 
 The output shows the estimated total (`est`), the estimated variance
 (`var`), the standard error (`std`), the coefficient of variation
 (`cv`), and the lower and upper bounds of a 95% confidence interval
@@ -520,7 +527,7 @@ lfs_samp_dwel$w_dwel_nrc[!lfs_samp_dwel$rep] <- 0
 lfs_samp_dwel$income[!lfs_samp_dwel$rep]  <- 0
 ```
 
-```{r transfert_sas_case2, include = FALSE}
+```{r transfert_sas_case2, include = FALSE, eval = FALSE}
 sas$saslib('CMC', path="F:\\Dwh\\1. General\\1.4 Methodology\\1.4.4. CMC Share\\Migration from SAS to R")
 lfs_samp_dwel_sas <- lfs_samp_dwel %>% 
   mutate(across(is.logical,as.numeric))
@@ -530,7 +537,7 @@ sas$df2sd(lfs_samp_dwel_sas,"lfs_samp_dwel","CMC")
 ## Variance decomposition
 
 When non-response is treated as a second phase of (Poisson) sampling,
-the total variance decomposes into two additive components:
+the total variance decomposes into two additive components (Caron, 1998):
 
 $$V(\hat{Y}) = V_{\text{sampling}} + V_{\text{non-response}}$$
 
@@ -704,11 +711,13 @@ precision2_nrc <- define_variance_wrapper(
 
 ### Using the wrapper
 
-When we use the wrapper, the data is automatically filtered with only
-respondent units. A warning is shown to inform you.
+When we use the wrapper, the data is automatically filtered to keep only 
+responding units. A warning is shown to inform you. If the unit identifiers 
+are ordered differently in the technical data and in the estimation data, 
+`gustave` tells you that the rows have been reordered. This should has no 
+impact on the variance estimation.
 
 ```{r}
-precision_nrc(lfs_samp_dwel, total(income))
 precision2_nrc(lfs_samp_dwel, total(income))
 precision2_nrc(lfs_samp_dwel %>% filter(rep == 1), total(income))
 ```
@@ -732,13 +741,19 @@ lfs_samp_dwel_sas <- lfs_samp_dwel %>%
 sas$df2sd(lfs_samp_dwel_sas,"lfs_samp_dwel","CMC")
 ```
 
-
 In our variance function, we reproduce all the calculation steps from
 `Poulpe` to compare with it. Here is the output from `Poulpe` :
 
 ```{r echo=FALSE, out.width="90%"}
 knitr::include_graphics("figures/Poulpe_SRS_NR.png")
 ```
+
+In `Poulpe`, the non-response variance component is not displayed
+directly. Instead, `Poulpe` outputs two intermediate quantities, F and
+E, whose difference yields the non-response variance (see Caron, 1998, p.
+185). Understanding the relationship between these quantities and the
+`gustave` formulation requires examining how the Poisson variance
+formula is parameterised.
 
 ```{r echo=FALSE}
 tibble(
@@ -748,7 +763,7 @@ tibble(
   typeres = c("S","P","F","E","E+F","FP"),
   gustave = c("est","`var_srs()` component","","","`var_pois()` component","var")
   ) %>% 
-  left_join(diag_env$poulpe) %>% 
+  left_join(diag_env$poulpe, by = "typeres") %>% 
   mutate(value = case_when(
     typeres == "S"   ~ results$est,
     typeres == "E+F" ~ diag_env$components$nr,
@@ -756,19 +771,6 @@ tibble(
   )) %>% 
   gt(caption = "Variance elements for Poulpe calculated from gustave")
 ```
-
-In `Poulpe`, the non-response variance component is not displayed
-directly. Instead, `Poulpe` outputs two intermediate quantities, F and
-E, whose difference yields the non-response variance (see Caron[^1], p.
-185). Understanding the relationship between these quantities and the
-`gustave` formulation requires examining how the Poisson variance
-formula is parameterised.
-
-[^1]: Caron N. (1998), "Le logiciel Poulpe : aspects méthodologiques",
-    Actes des Journées de méthodologie statistique
-    <http://jms-insee.fr/jms1998s03_1/> Deville, J.-C. (1993),
-    Estimation de la variance pour les enquêtes en deux phases,
-    Manuscript, INSEE, Paris.
 
 The F component in Poulpe corresponds to a Poisson variance where the
 sampling weight has been absorbed into the variable of interest (i.e.,
@@ -932,8 +934,6 @@ var_sample_cal <- function(y, lfs_samp_dwel) {
     add_row(typeres="P",value=variance[["srs"]]) %>% 
     add_row(typeres="S",value=NA) 
   
-  print(variance)
-  
   Reduce(`+`, variance)
 }
 ```
@@ -996,7 +996,7 @@ tibble(
   gustave = c("est","`var_srs()` component","","",
               "`var_pois()` component","?","var")
   ) %>% 
-  left_join(diag_env$poulpe) %>% 
+  left_join(diag_env$poulpe, by = "typeres") %>% 
   mutate(value = case_when(
     typeres == "S"   ~ results$est,
     typeres == "E+F" ~ diag_env$components$nr,
@@ -1010,10 +1010,10 @@ tibble(
 ## Context
 
 In many dwelling surveys at Statbel (such as LFS), the sampling design
-involves two stages. First, a stratified sample of municipalities is
-drawn from the population. Then a random sample of dwellings is drawn.
-Some of them do not respond, and answers are at dwelling level. At
-last, weights are corrected through reweighting.
+involves two stages. First, a random sample of municipalities is
+drawn from the population. Then a stratified random sample of dwellings 
+is drawn. Some of them do not respond, and answers are at dwelling level. 
+At last, weights are corrected through reweighting.
 
 ## Variance decomposition
 
@@ -1029,14 +1029,13 @@ from the selected PSU. The last component accounts for the random nature
 of dwelling non-response.
 
 Let us define the following quantities. At the PSU level: $N_P$ is the
-total number of PSUs in the population (or within a stratum, for the
-stratified case), $n_P$ is the number of sampled PSUs, and
-$\pi_{\text{psu}}$ is the first-order inclusion probability of a PSU. At
-the dwelling level: $N_{h|j}$ is the number of dwellings in PSU $j$,
-$n_{h|j}$ is the number of sampled dwellings in PSU $j$, and
-$\pi_{h|j}$ is the conditional inclusion probability of dwelling $h$
-given that PSU $j$ has been selected. The overall inclusion probability
-of a dwelling is
+total number of PSUs in the population, $n_P$ is the number of sampled PSUs, 
+and $\pi_{\text{psu}}$ is the first-order inclusion probability of a PSU. At
+the dwelling level: $N_{h|j}$ is the number of dwellings in PSU $j$ for the 
+strata $h$, $n_{h|j}$ is the number of sampled dwellings in PSU $j$ for the 
+strata $h$, and $\pi_{h|j}$ is the conditional inclusion probability of 
+dwelling $h$ given that PSU $j$ and strata $h$ has been selected. 
+The overall inclusion probability of a dwelling is
 $\pi_h = \pi_{\text{psu}(h)} \cdot \pi_{h|\text{psu}(h)}$. Finally,
 $p_h$ denotes the estimated response probability for dwelling $h$.
 
@@ -1044,7 +1043,7 @@ Non-response is modeled as a Poisson sampling phase. For each responding
 dwelling, the contribution to the non-response variance depends on its
 response probability and its fully expanded value. The formula is:
 
-$$V_{\text{NR}} = \sum_{h\in \text{resp}}{ \frac{1}{\pi_h} (1-p_h) \left(\frac{y_h}{p_h}\right)^2}$$
+$$V_{\text{NR}} = \sum_{i\in \text{resp}}{ \frac{1}{\pi_i} (1-p_i) \left(\frac{y_i}{p_i}\right)^2}$$
 
 
 Within each selected PSU, a simple random sample of dwellings is drawn.
@@ -1073,11 +1072,10 @@ weight argument set to $1/{\pi_{h|j}}$.
 Once the PSU-level totals $\hat Y_{j}$ are available, the PSU sampling
 variance follows the standard stratified SRS formula:
 
-$$V_{PSU} = \sum_{strata} N_{P,s}^2 \left( 1 - \frac{n_{P,s}}{N_{P,s}} \right)\frac{s^2_{P,s}}{n_{P,s}}$$
+$$V_{PSU} = N_{P}^2 \left( 1 - \frac{n_{P}}{N_{P}} \right)\frac{s^2_{P}}{n_{P}}$$
 
-Where $s^2_{P,s}$ is the sample variance of the $\hat Y_{j}$ values
-within stratum $s$. In `gustave`, this is a single call to `var_srs()`
-with the PSU-level strata.
+Where $s^2_{P}$ is the sample variance of the $\hat Y_{j}$ values. 
+In `gustave`, this is a single call to `var_srs()`.
 
 This case cannot be handled by `qvar()`, which is limited to
 single-stage designs. It is precisely the kind of situation where
@@ -1088,8 +1086,8 @@ outermost stage (PSU sampling), applying `add_zero()` at each transition
 to reintroduce the units lost at the previous step.
 
 We explain step by step the `define_variance_wrapper()` writing, then we
-introduce a custom experimental `qvar_ms()` function, to estimate
-variance for multi-levels stratified simple random sampling.
+introduce a custom `qvar_ms()` function, to estimate variance for 
+multi-levels stratified simple random sampling.
 
 For this case, we use the two datasets `lfs_samp_area` and `lfs_samp_dwel`.
 
@@ -1106,18 +1104,18 @@ var_sample_two <- function(y, lfs_samp_area, lfs_samp_dwel) {
   # Step 0: Prepare the respondents datasets
   resp_dwel <- lfs_samp_dwel %>% filter(rep == 1)
   
-  # Step 0: Prepare the calibration matrix (individual level)
+  # Step 1: Prepare the calibration matrix (individual level)
   cal_form <- as.formula("~id_area")
   x_cal <- model.matrix(cal_form, data = resp_dwel)
 
-  # Step 1: Replace y with calibration residuals
+  # Step 2: Replace y with calibration residuals
   y[resp_dwel$id_dwel, ] <- res_cal(
     y[resp_dwel$id_dwel,],
     x = x_cal,
     w = resp_dwel$w_dwel_nrc
   )
   
-  # Step 2: Non-response variance (Poisson, individuals respondents only)
+  # Step 3: Non-response variance (Poisson, individuals respondents only)
   variance[["nr"]] <- var_pois(
     y[resp_dwel$id_dwel, ,drop = FALSE],
     pik = resp_dwel$prep,
@@ -1129,10 +1127,10 @@ var_sample_two <- function(y, lfs_samp_area, lfs_samp_dwel) {
     pik = resp_dwel$prep
   )
   
-  # Step 3: Reintroduce dwellings non-respondents with zeros
+  # Step 4: Reintroduce dwellings non-respondents with zeros
   y <- add_zero(y, rownames = lfs_samp_dwel$id_dwel)
   
-  # One variance per PSU, weighted by PSU size
+  # Step 5: One variance per PSU, weighted by PSU size
   variance[["srs-dwel"]] <- unique(lfs_samp_dwel$id_area) %>% map(~{
     sub <- lfs_samp_dwel %>% filter(id_area == .x)
     pik_area <- 1 / unique(sub$w_area)
@@ -1142,10 +1140,12 @@ var_sample_two <- function(y, lfs_samp_area, lfs_samp_dwel) {
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
+  # --- Transition: aggregate to area level ---
   y_area <- sum_by(y / lfs_samp_dwel$prep, 
                    by = lfs_samp_dwel$id_area, 
                    w = lfs_samp_dwel$w_dwel)
   
+  # Step 6: area sampling variance
   variance[["srs-area"]] <- var_srs(
     y_area[lfs_samp_area$id_area, , drop = FALSE],
     pik    = 1 / lfs_samp_area$w_area
@@ -1163,13 +1163,13 @@ var_sample_two <- function(y, lfs_samp_area, lfs_samp_dwel) {
 }
 ```
 
-The key addition is two aggregations, one at dwelling then at PSU
+The key addition is two aggregations, one at dwelling then at area
 level. The calibration is done at individual level. There are two
 `var_srs()` steps, the key step here is to estimate variance of
-dwelling within each PSU, and then to divide by the selection
-probability of each PSU. After that, we aggregate from dwelling to PSU
+dwelling within each area, and then to divide by the selection
+probability of each area After that, we aggregate from dwelling to area
 with the non-response correction and finally calculate the variance due
-to the PSU sampling.
+to the area sampling.
 
 ### Technical data and Wrapper
 
@@ -1257,7 +1257,7 @@ tibble(
   gustave = c("est","`var_srs()` component","","",
               "`var_pois()` component","?","var")
   ) %>% 
-  left_join(diag_env$poulpe) %>% 
+  left_join(diag_env$poulpe, by = "typeres") %>% 
   mutate(value = case_when(
     typeres == "S"   ~ results$est,
     typeres == "E+F" ~ diag_env$components$nr,
@@ -1274,8 +1274,8 @@ Case 4 assumed that the variable of interest was measured at the
 dwelling level. In practice, however, most survey statistics are
 produced at the individual level — for instance, unemployment rates or
 average income per person. In this case, the sampling design remains a
-two-stage draw (stratified PSU sampling, then dwelling SRS within
-PSUs), followed by an exhaustive collection of all individuals within
+two-stage draw (area sampling, then dwelling SRS within areas), 
+followed by an exhaustive collection of all individuals within
 responding dwellings. The third sampling stage is exhaustive : once a
 dwelling responds, all its members are observed.
 
@@ -1296,7 +1296,7 @@ $$V(\hat{Y})=V_{PSU}+V_{HH}+V_{NR}$$
 The formulas are identical to those presented in Case 4. The only
 difference is operational: the variable of interest $y_i$ is now defined
 at the individual level and must be aggregated to the dwelling level
-(by summing within dwellings) before computing the dwelling and PSU
+(by summing within dwellings) before computing the dwelling and area
 variance components. This aggregation step occurs naturally through
 `sum_by()`.
 
@@ -1357,9 +1357,11 @@ them. In particular, we copy the `pik_dwel` into the individual dataset.
 
 ```{r}
 lfs_samp_ind <- lfs_samp_ind %>% 
-  select(-any_of(c("pik_area","w_area","w_dwel_nrc","w_dwel_cond","prep","rep","id_area"))) %>% 
+  select(-any_of(c("pik_area","w_area","w_dwel_nrc","w_dwel_cond",
+                   "prep","rep","id_area"))) %>% 
   left_join(lfs_samp_dwel %>% 
-              select(id_dwel,id_area,rep,prep,w_dwel_nrc,w_dwel_cond),by = "id_dwel") %>% 
+              select(id_dwel,id_area,rep,prep,w_dwel_nrc,
+                     w_dwel_cond),by = "id_dwel") %>% 
   left_join(lfs_samp_area %>% 
               select(id_area,pik_area,w_area),by = "id_area")
 ```
@@ -1382,18 +1384,18 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
   resp_ind  <- lfs_samp_ind %>% filter(rep == 1)
   resp_dwel <- lfs_samp_dwel %>% filter(rep == 1)
   
-  # Step 0: Prepare the calibration matrix (individual level)
+  # Step 1: Prepare the calibration matrix (individual level)
   cal_form <- as.formula("~id_area")
   x_cal <- model.matrix(cal_form, data = resp_ind)
 
-  # Step 1: Replace y with calibration residuals
+  # Step 2: Replace y with calibration residuals
   y[resp_ind$id_ind, ] <- res_cal(
     y[resp_ind$id_ind,],
     x = x_cal,
     w = resp_ind$w_dwel_nrc
   )
   
-  # Step 2: Non-response variance (Poisson, individuals respondents only)
+  # Step 3: Non-response variance (Poisson, individuals respondents only)
   variance[["nr"]] <- var_pois(
     y[resp_ind$id_ind, ,drop = FALSE],
     pik = resp_ind$prep,
@@ -1405,16 +1407,16 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
     pik = resp_ind$prep
   )
   
-  # Step 3: Reintroduce indviduals non-respondents with zeros
+  # Step 4: Reintroduce indviduals non-respondents with zeros
   y <- add_zero(y, rownames = lfs_samp_ind$id_ind)
   
   # --- Transition: aggregate to dwelling level ---
   y_dwel <- sum_by(y / lfs_samp_ind$prep, by = lfs_samp_ind$id_dwel)
   
-  # Step 3: Reintroduce dwellings non-respondents with zeros
+  # Step 5: Reintroduce dwellings non-respondents with zeros
   y_dwel <- add_zero(y_dwel, rownames = lfs_samp_dwel$id_dwel)
   
-  # One variance per PSU, weighted by PSU size
+  # Step 6: One variance per area, weighted by area size
   variance[["srs-dwel"]] <- unique(lfs_samp_dwel$id_area) %>% map(~{
     sub <- lfs_samp_dwel %>% filter(id_area == .x)
     pik_area <- 1 / unique(sub$w_area)
@@ -1424,9 +1426,12 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
-  # --- Transition: aggregate to PSU level ---
-  y_area <- sum_by(y_dwel, by = lfs_samp_dwel$id_area, w = lfs_samp_dwel$w_dwel)
+  # --- Transition: aggregate to area level ---
+  y_area <- sum_by(y_dwel, 
+                   by = lfs_samp_dwel$id_area, 
+                   w = lfs_samp_dwel$w_dwel)
   
+  # Step 7: area sampling variance
   variance[["srs-area"]] <- var_srs(
     y_area[lfs_samp_area$id_area, , drop = FALSE],
     pik    = 1 / lfs_samp_area$w_area
@@ -1438,9 +1443,7 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
     add_row(typeres="F",value=poulpe_F) %>% 
     add_row(typeres="E",value=variance[["nr"]] - poulpe_F) %>% 
     add_row(typeres="P",value=variance[["srs-area"]] + variance[["srs-dwel"]]) %>% 
-    add_row(typeres="S",value=NA) 
-  
-  print(variance)
+    add_row(typeres="S",value=NA)
   
   Reduce(`+`, variance)
 }
@@ -1463,37 +1466,34 @@ var_sample_three_2 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
    # --- Transition: aggregate to dwelling level ---
   y_dwel <- sum_by(y, by = lfs_samp_ind$id_dwel)
   
-  # Step 0: Prepare the calibration matrix (dwelling level)
+  # Step 1: Prepare the calibration matrix (dwelling level)
   cal_form <- as.formula("~id_area")
   x_cal <- model.matrix(cal_form, data = resp_dwel)
   
-  # Step 1: Replace y with calibration residuals
+  # Step 2: Replace y with calibration residuals
   y_dwel[resp_dwel$id_dwel, ] <- res_cal(
     y_dwel[resp_dwel$id_dwel,],
     x = x_cal,
     w = resp_dwel$w_dwel_nrc
   )
   
-  # Step 2: Non-response variance (Poisson, dwelling respondents)
+  # Step 3: Non-response variance (Poisson, dwelling respondents)
   variance[["nr"]] <- var_pois(
     y_dwel[resp_dwel$id_dwel, ,drop = FALSE],
     pik = resp_dwel$prep,
     w = resp_dwel$w_dwel
   )
   
-  # Step 3: Reintroduce indviduals non-respondents with zeros
-  y <- add_zero(y, rownames = lfs_samp_ind$id_ind)
-  
   poulpe_F <- var_pois(
     y_dwel[resp_dwel$id_dwel, ,drop = FALSE] * resp_dwel$w_dwel,
     pik = resp_dwel$prep
   )
   
-  # Step 3: Reintroduce dwellings non-respondents with zeros
+  # Step 4: Reintroduce dwellings non-respondents with zeros
   y_dwel <- add_zero(y_dwel, rownames = lfs_samp_dwel$id_dwel)
   
-  # One variance per PSU, weighted by PSU size
-  variance[["srs-hh"]] <- unique(lfs_samp_dwel$id_area) %>% map(~{
+  # Step 5: One variance per area, weighted by area size
+  variance[["srs-dwel"]] <- unique(lfs_samp_dwel$id_area) %>% map(~{
     sub <- lfs_samp_dwel %>% filter(id_area == .x)
     pik_area <- 1 / unique(sub$w_area)
     var_srs(
@@ -1507,7 +1507,8 @@ var_sample_three_2 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
                    by = lfs_samp_dwel$id_area, 
                    w = lfs_samp_dwel$w_dwel)
   
-  variance[["srs-psu"]] <- var_srs(
+  # Step 6: area sampling variance
+  variance[["srs-area"]] <- var_srs(
     y_area[lfs_samp_area$id_area, , drop = FALSE],
     pik    = 1 / lfs_samp_area$w_area
   )
@@ -1517,7 +1518,7 @@ var_sample_three_2 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
     add_row(typeres="PF",value=NA) %>% 
     add_row(typeres="F",value=poulpe_F) %>% 
     add_row(typeres="E",value=variance[["nr"]] - poulpe_F) %>% 
-    add_row(typeres="P",value=variance[["srs-psu"]] + variance[["srs-hh"]]) %>% 
+    add_row(typeres="P",value=variance[["srs-area"]] + variance[["srs-dwel"]]) %>% 
     add_row(typeres="S",value=NA) 
   
   Reduce(`+`, variance)
@@ -1557,6 +1558,33 @@ precision_three_2 <- define_variance_wrapper(
 ```
 
 ## Using `qvar_ms()`
+
+The two variance functions above are about fifty lines each, and almost all of 
+that code is plumbing: selecting respondents, expanding by the response 
+probability, aggregating with `sum_by()`, reintroducing zeros with 
+`add_zero()`, looping over areas, reindexing before each `var_srs()`. Only 
+two lines actually carry the methodological choice — where `res_cal()` and 
+`var_pois()` are placed relative to the dwelling aggregation. Everything else 
+is the same in both versions, and would be the same again for any other 
+three-stage design.
+
+`qvar_ms()` reverses this ratio. The design is declared once, argument by 
+argument, and the pipeline is built from the declaration. The two models 
+then differ by two arguments only: in model 1, `response_prob` and the 
+calibration are declared at the last (individual) stage; in model 2, 
+they are declared at the dwelling stage, through 
+`response_prob = list(NULL, "prep", NULL)` and `calibration_stage = 2`. 
+Nothing else changes.
+
+Two points deserve attention in the calls below. First, the individual stage 
+is exhaustive: all members of a responding dwelling are surveyed, so 
+`w_ind_cond = 1` and the third-stage sampling variance is zero. The stage 
+is still declared, because it is where the analysis units live. Second, 
+`sampling_weight` expects conditional weights — the weight of a unit given 
+that its parent was selected — whereas calibration_weight expects the 
+cumulated weight actually used in the calibration equations. This is the 
+most common source of error with `qvar_ms()`, and the dedicated vignette 
+comes back to it at length.
 
 ```{r}
 lfs_samp_ind$w_ind_cond <- 1
@@ -1690,6 +1718,16 @@ description — and, incidentally, the more efficient one. Model 1 remains
 the right choice when the goal is to replicate an existing `Poulpe` run
 specified at the individual level.
 
+## Comparison with `Poulpe`
+
+The comparison with `Poulpe` can be done only with the first situation, 
+with a correction at individual level. 
+Two small differences appear in the `Poulpe` output. First, the point estimate 
+returned under `typeres = "S"` ($191258.50$) is not the weighted total of 
+the variable of interest ($190449.16$), obtained directly from the 
+dissemination weights). Second, the total variance ($7273036.7$) is slightly 
+above the one estimated in R.
+
 ```{r eval=FALSE, include=FALSE}
 lfs_samp_ind_sas <- lfs_samp_ind %>% 
   mutate(
@@ -1702,6 +1740,19 @@ sas$df2sd(lfs_samp_ind_sas,"lfs_samp_ind","CMC")
 ```{r echo=FALSE, out.width = "90%"}
 knitr::include_graphics("figures/Poulpe_SRS_NR_CAL_THREE.png")
 ```
+
+Both come from the same source. `Poulpe` does not use the dissemination weight 
+to expand the sample: it rebuilds the design weights from the auxiliary table 
+that describes the sampling tree, in which the population size of each stage 
+is declared as a count. The rounding makes the reconstructed area weight 
+differ from the one used in R by a factor of $1.0042$ here, which propagates 
+to the point estimate. The same factor explains the variance. Applying it to 
+the Poulpe total gives $7242263$, which is the R estimate.
+
+The gap is below half a percent and has no practical consequence. It is 
+worth knowing only when comparing the two tools digit by digit: the 
+difference lies in how the population sizes are declared to `Poulpe`, 
+not in the variance estimator itself.
 
 ```{r echo=FALSE}
 tibble(
