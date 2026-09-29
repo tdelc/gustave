@@ -143,10 +143,8 @@ operationalise the variance estimation :
 ```{r libraries_intern, include=FALSE}
 library(tidyverse)
 library(gt)
-library(gustave)
 devtools::load_all("Z:/E8/0632-BMCNEW/Github/gustave")
 options(download.file.method="wininet")
-library(extrapolation)
 
 lfs_samp_area <- gustave::lfs_samp_area
 lfs_samp_dwel <- gustave::lfs_samp_dwel
@@ -220,18 +218,18 @@ Key variables in the individual sample (`lfs_samp_ind`,
   (`1/pik` of its dwelling, $\approx 120.24$)
 
 The vignette preamble derives the following variables. For the sampling
-design: `w_dwel_cond = 1/pik_dwel` (conditional dwelling weight,
+design: `w_dwel = 1/pik_dwel` (conditional dwelling weight,
 $\approx 6$), `w_area = mean(1/pik_area)` (conditional area weight,
 equalized across areas as the SRS convention requires,
 $\approx `r round(base::mean(1 / lfs_samp_area$pik_area), 1)`$), and
-`w_dwel = w_dwel_cond * w_area` (two-stage design weight,
+`w_final = w_dwel * w_area` (two-stage design weight,
 $\approx 120$).
 
 ```{r}
-lfs_samp_area$w_area       <- 1 / lfs_samp_area$pik_area
-lfs_samp_area$w_area       <- base::mean(lfs_samp_area$w_area)
-lfs_samp_dwel$w_dwel_cond  <- 1 / lfs_samp_dwel$pik_dwel
-lfs_samp_dwel$w_dwel       <- lfs_samp_area$w_area * lfs_samp_dwel$w_dwel_cond
+lfs_samp_area$w_area  <- 1 / lfs_samp_area$pik_area
+lfs_samp_area$w_area  <- base::mean(lfs_samp_area$w_area)
+lfs_samp_dwel$w_dwel  <- 1 / lfs_samp_dwel$pik_dwel
+lfs_samp_dwel$w_final <- lfs_samp_area$w_area * lfs_samp_dwel$w_dwel
 lfs_samp_dwel <- lfs_samp_dwel %>% select(-pik_area) %>% 
   left_join(lfs_samp_area %>% select(id_area,w_area), by = "id_area")
 ```
@@ -280,7 +278,7 @@ lfs_samp_dwel %>%
   replace_na(list(income = 0)) %>%
   group_by(id_area) %>%
   mutate(
-    N_h   = sum(w_dwel),
+    N_h   = sum(w_final),
     n_h   = n(),
     y_bar = base::mean(income),
     dev2  = (income - y_bar)^2
@@ -318,8 +316,8 @@ qvar(
   data = lfs_samp_dwel,
   id = "id_dwel",
   dissemination_dummy  = "diss",
-  dissemination_weight = "w_dwel",
-  sampling_weight = "w_dwel",
+  dissemination_weight = "w_final",
+  sampling_weight = "w_final",
   strata = "id_area",
   total(income)
 )
@@ -352,8 +350,8 @@ precision <- qvar(
   data = lfs_samp_dwel,
   id = "id_dwel",
   dissemination_dummy  = "diss",
-  dissemination_weight = "w_dwel",
-  sampling_weight = "w_dwel",
+  dissemination_weight = "w_final",
+  sampling_weight = "w_final",
   strata = "id_area",
   define = TRUE
 )
@@ -428,7 +426,7 @@ var_sample <- function(y, lfs_samp_dwel) {
   variance <- list()
   variance[["srs"]] <- var_srs(
     y,
-    pik    = 1 / lfs_samp_dwel$w_dwel,
+    pik    = 1 / lfs_samp_dwel$w_final,
     strata = lfs_samp_dwel$id_area
   )
   Reduce(`+`, variance)
@@ -457,7 +455,7 @@ precision2 <- define_variance_wrapper(
   variance_function = var_sample,
   technical_data    = technical_data,
   reference_id      = technical_data$lfs_samp_dwel$id_dwel,
-  reference_weight  = technical_data$lfs_samp_dwel$w_dwel,
+  reference_weight  = technical_data$lfs_samp_dwel$w_final,
   default_id        = "id_dwel"
 )
 ```
@@ -519,10 +517,10 @@ missing values for non-response weight. In these calculations, missing
 values create some trouble.
 
 ```{r}
-lfs_samp_dwel$w_dwel_cond_nrc <- lfs_samp_dwel$w_dwel_cond / lfs_samp_dwel$prep
-lfs_samp_dwel$w_dwel_nrc      <- lfs_samp_dwel$w_dwel      / lfs_samp_dwel$prep
+lfs_samp_dwel$w_final_nrc <- lfs_samp_dwel$w_final / lfs_samp_dwel$prep
+lfs_samp_dwel$w_dwel_nrc  <- lfs_samp_dwel$w_dwel  / lfs_samp_dwel$prep
 
-lfs_samp_dwel$w_dwel_cond_nrc[!lfs_samp_dwel$rep] <- 0
+lfs_samp_dwel$w_final_nrc[!lfs_samp_dwel$rep] <- 0
 lfs_samp_dwel$w_dwel_nrc[!lfs_samp_dwel$rep] <- 0
 lfs_samp_dwel$income[!lfs_samp_dwel$rep]  <- 0
 ```
@@ -583,9 +581,9 @@ precision_nrc <- qvar(
   id                   = "id_dwel",
   strata               = "id_area",
   dissemination_dummy  = "rep",
-  dissemination_weight = "w_dwel_nrc",
-  sampling_weight      = "w_dwel",
-  nrc_weight           = "w_dwel_nrc",
+  dissemination_weight = "w_final_nrc",
+  sampling_weight      = "w_final",
+  nrc_weight           = "w_final_nrc",
   response_dummy       = "rep",
   define = TRUE
 )
@@ -628,12 +626,12 @@ var_sample_nrc <- function(y, lfs_samp_dwel) {
   variance[["nr"]] <- var_pois(
     y[resp$id_dwel, ,drop = FALSE],
     pik = resp$prep,
-    w   = resp$w_dwel
+    w   = resp$w_final
   )
   
   # Poulpe calculations
   poulpe_F <- var_pois(
-    y[resp$id_dwel, ,drop = FALSE] * resp$w_dwel,
+    y[resp$id_dwel, ,drop = FALSE] * resp$w_final,
     pik = resp$prep
   )
   
@@ -643,8 +641,8 @@ var_sample_nrc <- function(y, lfs_samp_dwel) {
   # Component 2: Sampling variance (SRS, full sample)
   # The variable must be divided by the response probability
   variance[["srs"]] <- var_srs(
-    y / (lfs_samp_dwel$w_dwel / lfs_samp_dwel$w_dwel_nrc),
-    pik    = 1 / lfs_samp_dwel$w_dwel,
+    y / (lfs_samp_dwel$w_final / lfs_samp_dwel$w_final_nrc),
+    pik    = 1 / lfs_samp_dwel$w_final,
     strata = lfs_samp_dwel$id_area
   )
   
@@ -697,7 +695,7 @@ precision2_nrc <- define_variance_wrapper(
   variance_function = var_sample_nrc,
   technical_data    = technical_data_nrc,
   reference_id      = technical_data_nrc$lfs_samp_dwel$id_dwel,
-  reference_weight  = technical_data_nrc$lfs_samp_dwel$w_dwel_nrc,
+  reference_weight  = technical_data_nrc$lfs_samp_dwel$w_final_nrc,
   default_id        = "id_dwel"
 )
 ```
@@ -853,12 +851,12 @@ precision_cal <- qvar(
   id                   = "id_dwel",
   strata               = "id_area",
   dissemination_dummy  = "rep",
-  dissemination_weight = "w_dwel_nrc",
-  sampling_weight      = "w_dwel",
-  nrc_weight           = "w_dwel_nrc",
+  dissemination_weight = "w_final_nrc",
+  sampling_weight      = "w_final",
+  nrc_weight           = "w_final_nrc",
   response_dummy       = "rep",
   calibration_dummy    = "rep",
-  calibration_weight   = "w_dwel_nrc",
+  calibration_weight   = "w_final_nrc",
   calibration_var      = "id_area",
   define = TRUE
 )
@@ -901,18 +899,18 @@ var_sample_cal <- function(y, lfs_samp_dwel) {
   y[resp$id_dwel, ] <- res_cal(
     y[resp$id_dwel, ,drop = FALSE],
     x = x_cal,
-    w = resp$w_dwel_nrc
+    w = resp$w_final_nrc
   )
   
   # Step 2: Non-response variance (Poisson, respondents only)
   variance[["nr"]] <- var_pois(
     y[resp$id_dwel, ,drop = FALSE],
     pik = resp$prep,
-    w   = resp$w_dwel
+    w   = resp$w_final
   )
   
   poulpe_F <- var_pois(
-    y[resp$id_dwel, ,drop = FALSE] * resp$w_dwel,
+    y[resp$id_dwel, ,drop = FALSE] * resp$w_final,
     pik = resp$prep
   )
   
@@ -922,7 +920,7 @@ var_sample_cal <- function(y, lfs_samp_dwel) {
   # Step 4: Sampling variance (SRS, full sample)
   variance[["srs"]] <- var_srs(
     y / (lfs_samp_dwel$prep),
-    pik    = 1 / lfs_samp_dwel$w_dwel,
+    pik    = 1 / lfs_samp_dwel$w_final,
     strata = lfs_samp_dwel$id_area
   )
   
@@ -964,7 +962,7 @@ precision2_cal <- define_variance_wrapper(
   variance_function = var_sample_cal,
   technical_data    = technical_data_cal,
   reference_id      = technical_data_cal$lfs_samp_dwel$id_dwel,
-  reference_weight  = technical_data_cal$lfs_samp_dwel$w_dwel_nrc,
+  reference_weight  = technical_data_cal$lfs_samp_dwel$w_final_nrc,
   default_id        = "id_dwel"
 )
 ```
@@ -1112,18 +1110,18 @@ var_sample_two <- function(y, lfs_samp_area, lfs_samp_dwel) {
   y[resp_dwel$id_dwel, ] <- res_cal(
     y[resp_dwel$id_dwel,],
     x = x_cal,
-    w = resp_dwel$w_dwel_nrc
+    w = resp_dwel$w_final_nrc
   )
   
   # Step 3: Non-response variance (Poisson, individuals respondents only)
   variance[["nr"]] <- var_pois(
     y[resp_dwel$id_dwel, ,drop = FALSE],
     pik = resp_dwel$prep,
-    w = resp_dwel$w_dwel
+    w = resp_dwel$w_final
   )
   
   poulpe_F <- var_pois(
-    y[resp_dwel$id_dwel, ,drop = FALSE] * resp_dwel$w_dwel,
+    y[resp_dwel$id_dwel, ,drop = FALSE] * resp_dwel$w_final,
     pik = resp_dwel$prep
   )
   
@@ -1136,7 +1134,7 @@ var_sample_two <- function(y, lfs_samp_area, lfs_samp_dwel) {
     pik_area <- 1 / unique(sub$w_area)
     var_srs(
       y[sub$id_dwel, ,drop = FALSE] / sub$prep,
-      pik    = 1 / sub$w_dwel_cond
+      pik    = 1 / sub$w_dwel
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
@@ -1182,7 +1180,7 @@ precision_two <- define_variance_wrapper(
   variance_function = var_sample_two,
   technical_data    = technical_data_two,
   reference_id      = technical_data_two$lfs_samp_dwel$id_dwel,
-  reference_weight  = technical_data_two$lfs_samp_dwel$w_dwel_nrc,
+  reference_weight  = technical_data_two$lfs_samp_dwel$w_final_nrc,
   default_id        = "id_dwel"
 )
 ```
@@ -1217,17 +1215,17 @@ precision2_two <- qvar_ms(
   
   # Dissemination and scope (last stage only)
   dissemination_dummy = "rep",
-  dissemination_weight = "w_dwel_nrc",
+  dissemination_weight = "w_final_nrc",
   
   # Sampling design (conditional weights)
-  sampling_weight = c("w_area", "w_dwel_cond"),
+  sampling_weight = c("w_area", "w_dwel"),
   
   # Non-response correction (last stage by default)
   response_prob = "prep",
   response_dummy = "rep",
 
   # Calibration (last stage by default, cumulated weight)
-  calibration_weight = "w_dwel_nrc",
+  calibration_weight = "w_final_nrc",
   calibration_var = "id_area",
   
   define = TRUE
@@ -1357,11 +1355,11 @@ them. In particular, we copy the `pik_dwel` into the individual dataset.
 
 ```{r}
 lfs_samp_ind <- lfs_samp_ind %>% 
-  select(-any_of(c("pik_area","w_area","w_dwel_nrc","w_dwel_cond",
+  select(-any_of(c("pik_area","w_area","w_dwel","w_final","w_final_nrc",
                    "prep","rep","id_area"))) %>% 
   left_join(lfs_samp_dwel %>% 
-              select(id_dwel,id_area,rep,prep,w_dwel_nrc,
-                     w_dwel_cond),by = "id_dwel") %>% 
+              select(id_dwel,id_area,rep,prep,w_dwel, w_final, 
+                     w_final_nrc),by = "id_dwel") %>% 
   left_join(lfs_samp_area %>% 
               select(id_area,pik_area,w_area),by = "id_area")
 ```
@@ -1383,6 +1381,7 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
   # Step 0: Prepare the respondents datasets
   resp_ind  <- lfs_samp_ind %>% filter(rep == 1)
   resp_dwel <- lfs_samp_dwel %>% filter(rep == 1)
+  y <- y[resp_ind$id_ind, , drop = FALSE]
   
   # Step 1: Prepare the calibration matrix (individual level)
   cal_form <- as.formula("~id_area")
@@ -1392,18 +1391,18 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
   y[resp_ind$id_ind, ] <- res_cal(
     y[resp_ind$id_ind,],
     x = x_cal,
-    w = resp_ind$w_dwel_nrc
+    w = resp_ind$w_final_nrc
   )
   
   # Step 3: Non-response variance (Poisson, individuals respondents only)
   variance[["nr"]] <- var_pois(
     y[resp_ind$id_ind, ,drop = FALSE],
     pik = resp_ind$prep,
-    w = resp_ind$w_area * resp_ind$w_dwel_cond
+    w = resp_ind$w_final
   )
   
   poulpe_F <- var_pois(
-    y[resp_ind$id_ind, ,drop = FALSE] * resp_ind$w_area * resp_ind$w_dwel_cond,
+    y[resp_ind$id_ind, ,drop = FALSE] * resp_ind$w_final,
     pik = resp_ind$prep
   )
   
@@ -1422,14 +1421,14 @@ var_sample_three_1 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
     pik_area <- 1 / unique(sub$w_area)
     var_srs(
       y_dwel[sub$id_dwel, ,drop = FALSE],
-      pik = 1 / sub$w_dwel_cond
+      pik = 1 / sub$w_dwel
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
   # --- Transition: aggregate to area level ---
   y_area <- sum_by(y_dwel, 
                    by = lfs_samp_dwel$id_area, 
-                   w = lfs_samp_dwel$w_dwel)
+                   w = lfs_samp_dwel$w_final)
   
   # Step 7: area sampling variance
   variance[["srs-area"]] <- var_srs(
@@ -1462,9 +1461,10 @@ var_sample_three_2 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
   # Step 0: Prepare the respondents datasets
   resp_ind  <- lfs_samp_ind %>% filter(rep == 1)
   resp_dwel <- lfs_samp_dwel %>% filter(rep == 1)
+  y <- y[resp_ind$id_ind, , drop = FALSE]
   
    # --- Transition: aggregate to dwelling level ---
-  y_dwel <- sum_by(y, by = lfs_samp_ind$id_dwel)
+  y_dwel <- sum_by(y, by = resp_ind$id_dwel)
   
   # Step 1: Prepare the calibration matrix (dwelling level)
   cal_form <- as.formula("~id_area")
@@ -1474,18 +1474,18 @@ var_sample_three_2 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
   y_dwel[resp_dwel$id_dwel, ] <- res_cal(
     y_dwel[resp_dwel$id_dwel,],
     x = x_cal,
-    w = resp_dwel$w_dwel_nrc
+    w = resp_dwel$w_final_nrc
   )
   
   # Step 3: Non-response variance (Poisson, dwelling respondents)
   variance[["nr"]] <- var_pois(
     y_dwel[resp_dwel$id_dwel, ,drop = FALSE],
     pik = resp_dwel$prep,
-    w = resp_dwel$w_dwel
+    w = resp_dwel$w_final
   )
   
   poulpe_F <- var_pois(
-    y_dwel[resp_dwel$id_dwel, ,drop = FALSE] * resp_dwel$w_dwel,
+    y_dwel[resp_dwel$id_dwel, ,drop = FALSE] * resp_dwel$w_final,
     pik = resp_dwel$prep
   )
   
@@ -1498,7 +1498,7 @@ var_sample_three_2 <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
     pik_area <- 1 / unique(sub$w_area)
     var_srs(
       y_dwel[sub$id_dwel, ,drop = FALSE] / sub$prep,
-      pik = 1 / sub$w_dwel_cond
+      pik = 1 / sub$w_dwel
     ) * 1/pik_area
   }) %>% unlist %>% sum
   
@@ -1537,7 +1537,7 @@ precision_three_1 <- define_variance_wrapper(
   variance_function = var_sample_three_1,
   technical_data    = technical_data_three,
   reference_id      = technical_data_three$lfs_samp_ind$id_ind,
-  reference_weight  = technical_data_three$lfs_samp_ind$w_dwel_nrc,
+  reference_weight  = technical_data_three$lfs_samp_ind$w_final_nrc,
   default_id        = "id_ind"
 )
 
@@ -1545,7 +1545,7 @@ precision_three_2 <- define_variance_wrapper(
   variance_function = var_sample_three_2,
   technical_data    = technical_data_three,
   reference_id      = technical_data_three$lfs_samp_ind$id_ind,
-  reference_weight  = technical_data_three$lfs_samp_ind$w_dwel_nrc,
+  reference_weight  = technical_data_three$lfs_samp_ind$w_final_nrc,
   default_id        = "id_ind"
 )
 ```
@@ -1578,7 +1578,7 @@ Nothing else changes.
 
 Two points deserve attention in the calls below. First, the individual stage 
 is exhaustive: all members of a responding dwelling are surveyed, so 
-`w_ind_cond = 1` and the third-stage sampling variance is zero. The stage 
+`w_ind = 1` and the third-stage sampling variance is zero. The stage 
 is still declared, because it is where the analysis units live. Second, 
 `sampling_weight` expects conditional weights — the weight of a unit given 
 that its parent was selected — whereas calibration_weight expects the 
@@ -1587,7 +1587,7 @@ most common source of error with `qvar_ms()`, and the dedicated vignette
 comes back to it at length.
 
 ```{r}
-lfs_samp_ind$w_ind_cond <- 1
+lfs_samp_ind$w_ind <- 1
 
 precision2_three_1 <- qvar_ms(
   
@@ -1599,17 +1599,17 @@ precision2_three_1 <- qvar_ms(
   
   # Dissemination and scope (last stage only)
   dissemination_dummy = "rep",
-  dissemination_weight = "w_dwel_nrc",
+  dissemination_weight = "w_final_nrc",
   
   # Sampling design (conditional weights)
-  sampling_weight = c("w_area", "w_dwel_cond","w_ind_cond"),
+  sampling_weight = c("w_area", "w_dwel","w_ind"),
   
   # Non-response correction (last stage by default)
   response_prob = "prep",
   response_dummy = "rep",
 
   # Calibration (last stage by default, cumulated weight)
-  calibration_weight = "w_dwel_nrc",
+  calibration_weight = "w_final_nrc",
   calibration_var = "id_area",
   
   define = TRUE
@@ -1620,7 +1620,7 @@ precision2_three_1(lfs_samp_ind,total(income))
 
 
 ```{r}
-lfs_samp_ind$w_ind_cond <- 1
+lfs_samp_ind$w_ind <- 1
 
 precision2_three_2 <- qvar_ms(
   
@@ -1633,18 +1633,17 @@ precision2_three_2 <- qvar_ms(
   
   # Dissemination and scope (last stage only)
   dissemination_dummy = "rep",
-  dissemination_weight = "w_dwel_nrc",
+  dissemination_weight = "w_final_nrc",
   
   # Sampling design (conditional weights)
-  sampling_weight = c("w_area", "w_dwel_cond","w_ind_cond"),
+  sampling_weight = c("w_area", "w_dwel","w_ind"),
   
   # Non-response correction (last stage by default)
   response_prob = list(NULL,"prep",NULL),
   response_dummy = list(NULL,"rep",NULL),
-  # nrc_weight = "w_dwel_nrc",
 
   # Calibration (last stage by default, cumulated weight)
-  calibration_weight = "w_dwel_nrc",
+  calibration_weight = "w_final_nrc",
   calibration_var = "id_area",
   calibration_stage = 2,
   
@@ -1831,16 +1830,11 @@ since the point estimate is computed as a weighted sum using
 
 ```{r, eval = F}
 # Check for NA in critical variables
-check_vars <- c("pik_area", "pik_dwel", "w_area", "w_dwel_cond", "prep", "rep")
+check_vars <- c("pik_area", "pik_dwel", "w_area", "w_dwel", "prep", "rep")
 lfs_samp_dwel %>%
   summarise(across(all_of(check_vars), ~ sum(is.na(.x)))) %>%
   pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
   filter(n_missing > 0)
-
-# Another possibility, using extrapolation specific function
-lfs_samp_dwel %>% 
-  select(all_of(check_vars)) %>% 
-  plot_missings()
 ```
 
 For non-response weights specifically when you use `define_variance_wrapper()`, 
@@ -1851,7 +1845,7 @@ dissemination), but the value must be present.
 
 ```{r, eval = FALSE}
 lfs_samp_dwel <- lfs_samp_dwel %>%
-  mutate(w_dwel_nrc = ifelse(is.na(w_dwel_nrc), 0, w_dwel_nrc))
+  mutate(w_final_nrc = ifelse(is.na(w_final_nrc), 0, w_final_nrc))
 ```
 
 ### Identifier sorting
@@ -1908,7 +1902,7 @@ technical_data <- list()
 technical_data$lfs_samp_area <- lfs_samp_area %>%
   select(id_area, pik_area, w_area)
 technical_data$lfs_samp_dwel <- lfs_samp_dwel %>%
-  select(id_dwel, id_area, pik, w_area, w_dwel, w_dwel_cond, prep, rep)
+  select(id_dwel, id_area, pik, w_area, w_dwel, w_final, prep, rep)
 ```
 
 ## Customising the variance estimation
@@ -1973,16 +1967,16 @@ technical_data_flex <- list()
 technical_data_flex$lfs_samp_dwel   <- lfs_samp_dwel
 technical_data_flex$cal_vars <- "id_area"
 technical_data_flex$id_dwel  <- "id_dwel"
-technical_data_flex$wSmp     <- "w_dwel"
+technical_data_flex$wSmp     <- "w_final"
 technical_data_flex$prep     <- "prep"
-technical_data_flex$wCal     <- "w_dwel_nrc"
+technical_data_flex$wCal     <- "w_final_nrc"
 technical_data_flex$stratum  <- "id_area"
 
 precision_flex <- define_variance_wrapper(
   variance_function = var_sample_flex,
   technical_data    = technical_data_flex,
   reference_id      = technical_data_flex$lfs_samp_dwel$id_dwel,
-  reference_weight  = technical_data_flex$lfs_samp_dwel$w_dwel_nrc,
+  reference_weight  = technical_data_flex$lfs_samp_dwel$w_final_nrc,
   default_id        = "id_dwel"
 )
 
@@ -2041,9 +2035,9 @@ technical_data_flex <- list()
 technical_data_flex$lfs_samp_dwel   <- lfs_samp_dwel
 technical_data_flex$cal_vars <- "id_area"
 technical_data_flex$id_dwel  <- "id_dwel"
-technical_data_flex$wSmp     <- "w_dwel"
+technical_data_flex$wSmp     <- "w_final"
 technical_data_flex$prep     <- "prep"
-technical_data_flex$wCal     <- "w_dwel_nrc"
+technical_data_flex$wCal     <- "w_final_nrc"
 technical_data_flex$stratum  <- "id_area"
 
 # We need to create another list for technical parameters.
@@ -2055,7 +2049,7 @@ precision_flex <- define_variance_wrapper(
   technical_data    = technical_data_flex,
   technical_param   = technical_param_flex,
   reference_id      = technical_data_flex$lfs_samp_dwel$id_dwel,
-  reference_weight  = technical_data_flex$lfs_samp_dwel$w_dwel_nrc,
+  reference_weight  = technical_data_flex$lfs_samp_dwel$w_final_nrc,
   default_id        = "id_dwel"
 )
 
@@ -2127,14 +2121,14 @@ var_sample_diag <- function(y, lfs_samp_area, lfs_samp_dwel, lfs_samp_ind) {
 technical_data <- list()
 technical_data$lfs_samp_area <- lfs_samp_area
 technical_data$lfs_samp_dwel <- lfs_samp_dwel
-technical_data$lfs_samp_ind <- lfs_samp_ind
+technical_data$lfs_samp_ind  <- lfs_samp_ind
 
 precision <- define_variance_wrapper(
   variance_function  = var_sample_diag,
   technical_data     = technical_data,
   objects_to_include = "diag_env",
   reference_id       = technical_data$lfs_samp_ind$id_ind,
-  reference_weight   = technical_data$lfs_samp_ind$w_dwel_nrc,
+  reference_weight   = technical_data$lfs_samp_ind$w_final_nrc,
   default_id         = "id_ind"
 )
 
@@ -2194,7 +2188,7 @@ precision <- define_variance_wrapper(
   technical_data     = technical_data,
   objects_to_include = "rate",
   reference_id       = technical_data$lfs_samp_ind$id_ind,
-  reference_weight   = technical_data$lfs_samp_ind$w_dwel_nrc,
+  reference_weight   = technical_data$lfs_samp_ind$w_final_nrc,
   default_id         = "id_ind"
 )
 
@@ -2398,73 +2392,105 @@ output, making it difficult to spot genuine warnings. It is therefore
 preferable to remove diagnostic `print()` statements from the variance
 function before running a batch estimation.
 
-The full source code of `call_gustave()` and `batch_gustave()` is
-available in the package `extrapolation`.
-
 # Conclusion
 
-This vignette has demonstrated how the `gustave` package can fully
-replace the SAS `Poulpe` macro for analytical variance estimation in
-complex dwelling surveys. Starting from stratified simple random
-sampling and progressively adding non-response correction, calibration,
-and multi-stage sampling, we have shown that `gustave` reproduces
-`Poulpe` results while offering a more flexible and transparent
-framework.
+This vignette has shown how the `gustave` package can replace the SAS 
+`Poulpe` macro for analytical variance estimation in complex household 
+surveys. Starting from stratified simple random sampling and progressively 
+adding non-response correction, calibration and multistage sampling, we 
+obtained the same results as Poulpe — down to a rounding convention on 
+the declared population sizes — within a more flexible and more 
+transparent framework.
 
-The key advantage of `gustave` is its wrapper mechanism: once a variance
-estimation methodology has been encoded by the methodologist, analysts
-can compute precision measures on their own datasets without needing to
-understand the underlying formulas. The wrapper is a self-contained R
-object that can be saved, shared, and reused across survey waves.
+The key advantage of `gustave` is its wrapper mechanism. Once the 
+methodologist has encoded the estimation methodology, analysts compute 
+precision measures on their own data without knowing the underlying 
+formulas. The wrapper is a self-contained R object that can be saved, 
+shared and reused across survey waves.
 
-However, this flexibility comes at a cost. Unlike `Poulpe`, which
-imposes a rigid but predictable structure through its tree-based
-configuration, `gustave` requires the methodologist to have a thorough
-understanding of the variance decomposition formulas and their
-translation into R code. Errors in the variance function — wrong
-ordering of steps, incorrect inclusion probabilities, mishandled
-non-response corrections — can produce silently incorrect results.
+This flexibility has a cost, and it is worth being explicit about it. 
+`Poulpe` imposes a rigid structure: the design is declared as a tree, and 
+the macro either runs or fails. gustave asks the methodologist to write 
+the variance decomposition as R code. Every wrapper in this vignette 
+went through several wrong versions before reaching the one printed here. 
+A few examples, all encountered while writing this document: aggregating 
+dwellings to areas with the cumulated weight instead of the conditional 
+one, which inflates the first-stage component by the square of the area 
+weight; reindexing a `sum_by()` output by row position instead of by name, 
+which silently pairs each area total with another area's inclusion 
+probability; weighting the Poisson non-response term quadratically 
+instead of linearly; forgetting to restrict the interest variable to 
+responding units before aggregation, which made the estimated variance 
+depend on whether the analyst had filtered the file beforehand.
 
-AJOUT PARAGRAPHE SUR QVAR_MS()
+None of these mistakes produced an error message. None produced a missing 
+value, a negative variance or an implausible confidence interval. They 
+produced well-formatted numbers, sometimes within a few percent of the 
+correct value, sometimes a hundred times too large. This is the central 
+difficulty of the exercise: a variance estimation error is essentially 
+invisible. A point estimate can be checked against a known total, a 
+previous wave or a published figure. A variance has no such external 
+anchor. It is a number nobody can check by inspection, produced by a 
+formula few people read, and consumed as a confidence interval that will 
+look reasonable whatever its value. We caught our own errors only because 
+we had two independent references — `Poulpe` on the one hand, `qvar()` 
+and `qvar_ms()` on the other hand.
 
-To mitigate this risk, we have presented several strategies. 
-Second, making variance functions configurable through `technical_data`
-and `technical_param` reduces the need to modify source code across
-survey waves. Third, the `inspect_wrapper()` diagnostic tool provides a
-visual verification of the pipeline before any estimation is run.
+That observation is the reason for `qvar_ms()`. Rather than writing a 
+variance function for each survey, the design is declared argument by 
+argument — one per methodological feature — and the pipeline is derived 
+from the declaration. The estimator is unchanged: the same Rao (1975) 
+decomposition, the same `gustave` variance functions, validated in the 
+dedicated vignette against hand-built wrappers on nine designs of 
+increasing complexity. What changes is the number of opportunities to 
+get it wrong. The weight conventions are checked at definition time 
+rather than assumed; the ordering of the steps is not a matter of writing 
+them in the right sequence; the restriction to responding units is handled 
+internally, so that the result no longer depends on what the analyst passes. 
+The remaining errors are declaration errors — a conditional weight given 
+where a cumulated one is expected — and those are the ones a data check 
+can catch, which is precisely what the calibration g-ratio warning does.
 
-Taken together, these tools support a clear division of labour:
-methodologists prepare robust wrappers with the appropriate variance
-decomposition, and thematic analysts use them as black-box functions
-through `batch_gustave()` to produce quality reports. This collaborative
-workflow is further strengthened by the fact that wrappers, as
-self-contained R functions, can be called from Python through interfaces
-such as `rpy2`, allowing analysts to integrate variance estimation into
-their existing pipelines without requiring expertise in R.
+Three further tools support the same goal. Making variance functions 
+configurable through `technical_data` and `technical_param` avoids editing 
+source code from one wave to the next. `qvar_notes()` replays what happened 
+when the wrapper was defined — the coercions, the crossed strata, the 
+excluded single-unit strata. `inspect_wrapper()` rebuilds the pipeline 
+that will actually execute from the technical data of the wrapper itself, 
+and reports it as a document that can be attached to a quality report or 
+handed to a reviewer. Together they make an object that was opaque by 
+construction readable, which is the minimum condition for a second pair 
+of eyes to be of any use.
 
-Several topics have not been covered in this vignette. The sampling designs 
-considered here are all based on simple random sampling (with or without 
-stratification) at each stage. Designs involving unequal inclusion 
-probabilities (PPS sampling), balanced sampling (cube method), or 
-systematic sampling require different variance estimators — notably 
-`varDT()` for the Deville-Tillé approximation or `varSYG()` for the 
-Sen-Yates-Grundy estimator — which `gustave` supports but which were 
-outside the scope of this document.
+Taken together, these tools support a clear division of labour: 
+methodologists prepare and document the wrappers, thematic analysts use 
+them as black boxes through `batch_gustave()` to produce quality reports. 
+Wrappers being ordinary R functions, they can also be called from Python 
+through `rpy2`, so that variance estimation fits into existing pipelines 
+without requiring R expertise.
 
-We have also not compared `gustave` with the R `survey` package, which
-takes a fundamentally different approach: the analyst declares the full
-survey design upfront, and the package handles variance estimation
-internally. A systematic comparison — particularly regarding the impact
-of ignoring certain design features — would be a valuable complement to
-this work.
+Several topics fall outside this vignette. The designs considered here 
+all rely on simple random sampling, with or without stratification, at 
+each stage. Unequal inclusion probabilities (PPS), balanced sampling 
+(cube method) and systematic sampling call for different estimators — 
+`varDT()` for the Deville-Tillé approximation, `varSYG()` for the 
+Sen-Yates-Grundy estimator — which `gustave` provides and which `define_variance_wrapper()` can accommodate.
 
-Finally, an important next step is the integration of the variance
-estimation output with visualisation tools. Packages such as `fonctionr`
-are specifically designed to produce publication-quality graphics with
-properly computed confidence intervals. Connecting `gustave` wrappers to
-such tools would close the loop between estimation and dissemination,
-ensuring that the uncertainty measures produced here are consistently
-reflected in the final statistical outputs.
+We have not compared `gustave` with the `survey` package, which takes 
+the opposite approach: the analyst declares the design once, and the 
+package handles the estimation. Its default treatment of multistage 
+designs is the ultimate cluster approximation, which differs from the 
+stage-by-stage decomposition used here; the size and sign of the difference 
+would be informative in itself. More broadly, the strongest available 
+check on an analytical variance is a replication estimate computed 
+independently.
+
+Finally, the estimation output has to reach the publication. Packages 
+such as `fonctionr` produce publication-quality graphics with properly 
+computed confidence intervals from `survey` design objects. Bundling a 
+wrapper together with its data into such an object would let precision 
+estimates flow directly into tables and graphs, instead of living in a 
+separate results file.
 
 # References
 
@@ -2522,7 +2548,7 @@ run;
 
 proc sql;
 create table BURCE.GEO as select distinct
-	id_area, (1) AS Auxniv, sum(w_dwel) AS NNN
+	id_area, (1) AS Auxniv, sum(w_final) AS NNN
 from R.lfs_samp_dwel group by id_area;
 quit;
 
@@ -2566,7 +2592,7 @@ run;
 
 proc sql;
 create table BURCE.GEO as select distinct
-	id_area, (1) AS Auxniv, sum(w_dwel) AS NNN
+	id_area, (1) AS Auxniv, sum(w_final) AS NNN
 from R.lfs_samp_dwel group by id_area;
 quit;
 
@@ -2624,7 +2650,7 @@ create table BURCE.GEO2_A as select distinct
 from CALAG.lfs_samp_area;
 
 create table BURCE.GEO2_B as select distinct
-	strate_fictive, id_area, (2) AS Auxniv, sum(w_dwel_cond) AS NNN
+	strate_fictive, id_area, (2) AS Auxniv, sum(w_dwel) AS NNN
 from CALAG.lfs_samp_dwel group by id_area;
 quit;
 
@@ -2691,11 +2717,11 @@ create table BURCE.GEO3_A as select distinct
 from CALAG.lfs_samp_area;
 
 create table BURCE.GEO3_B as select distinct
-	strate_fictive, id_area, (2) AS Auxniv, sum(w_dwel_cond) AS NNN
+	strate_fictive, id_area, (2) AS Auxniv, sum(w_dwel) AS NNN
 from CALAG.lfs_samp_dwel group by id_area;
 
 create table BURCE.GEO3_C as select distinct
-	strate_fictive, id_area, id_dwel, (3) AS Auxniv, sum(w_ind_cond) AS NNN
+	strate_fictive, id_area, id_dwel, (3) AS Auxniv, sum(w_ind) AS NNN
 from CALAG.lfs_samp_ind group by id_dwel;
 quit;
 

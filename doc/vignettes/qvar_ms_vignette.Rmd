@@ -183,7 +183,8 @@ final dwelling weight is rebuilt as the product of the **conditional**
 weights of the two stages.
 
 ```{r case2-data}
-lfs_samp_area$w_area <- base::mean(1 / lfs_samp_area$pik_area)
+lfs_samp_area$w_area  <- 1 / lfs_samp_area$pik_area
+lfs_samp_area$w_area  <- base::mean(lfs_samp_area$w_area)
 
 lfs_samp_dwel <- lfs_samp_dwel %>%
   left_join(lfs_samp_area %>% select(id_area, w_area), by = "id_area")
