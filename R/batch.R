@@ -136,8 +136,9 @@ batch_gustave <- function(df,
       pop = stringr::str_replace(pop, "^$", "ALL")
     )
   
+  rownames(results) <- NULL
+  
   results %>%
-    remove_rownames() %>%
     select(step, indic, pop, n, est, variance, std, cv, lower, upper,
            all_of(c(vars_groups, vars_domain)), call)
 }
